@@ -92,20 +92,17 @@ final class PreviewLayerHolder {
 /// SwiftUI 封装的摄像头预览视图，使用 UIViewRepresentable
 struct CameraPreviewView: UIViewRepresentable {
     let session: AVCaptureSession // 摄像头会话
-    let isFrontCamera: Bool // 是否为前置摄像头
     var holder: PreviewLayerHolder? = nil // 可选的预览层持有者
 
     /// 创建并配置预览 UIView
+    /// 前置摄像头的镜像由 AVCaptureConnection 自动处理
+    /// （automaticallyAdjustsVideoMirroring 默认开启，前置自动镜像一次），
+    /// 不要再手动加 CATransform 镜像——那会造成双重镜像、画面左右反转
     func makeUIView(context: Context) -> PreviewUIView {
         let view = PreviewUIView()
         view.videoPreviewLayer.session = session // 绑定会话
         view.videoPreviewLayer.videoGravity = .resizeAspectFill // 填充模式
         applyStabilizationIfAvailable(on: view.videoPreviewLayer.connection) // 应用防抖
-
-        // 🔥 前置摄像头时使用 transform 翻转（最高优先级）
-        if isFrontCamera {
-            view.videoPreviewLayer.transform = CATransform3DMakeScale(-1, 1, 1)
-        }
 
         holder?.layer = view.videoPreviewLayer
 
@@ -116,13 +113,6 @@ struct CameraPreviewView: UIViewRepresentable {
     func updateUIView(_ uiView: PreviewUIView, context: Context) {
         uiView.videoPreviewLayer.session = session // 更新会话
         applyStabilizationIfAvailable(on: uiView.videoPreviewLayer.connection) // 重新应用防抖
-        
-        // 🔥 更新翻转状态
-        if isFrontCamera {
-            uiView.videoPreviewLayer.transform = CATransform3DMakeScale(-1, 1, 1)
-        } else {
-            uiView.videoPreviewLayer.transform = CATransform3DIdentity
-        }
     }
 }
 

@@ -148,7 +148,6 @@ struct CaptureView: View {
 					boxCenterInView: viewModel.boxCenterInView,
 					isAligned: viewModel.isAligned,
 					distanceToCenter: viewModel.distanceToCenter,
-					isFrontCamera: viewModel.isFrontCamera,
 					onCompositionRectUpdate: { rect in
 						viewModel.registerCompositionRect(rect)
 					},
@@ -555,12 +554,9 @@ struct CaptureView: View {
 	/// 点按对焦/曝光：预览层本地坐标 → 设备坐标，并显示对焦框动画
 	private func handleTapToFocus(at point: CGPoint) {
 		guard let layer = previewHolder.layer else { return }
-		var devicePoint = layer.captureDevicePointConverted(fromLayerPoint: point)
-		// 前置摄像头预览是手动 transform 镜像的，captureDevicePointConverted
-		// 不感知该 transform，需要手动翻转 X
-		if viewModel.isFrontCamera {
-			devicePoint.x = 1 - devicePoint.x
-		}
+		// captureDevicePointConverted 已处理预览层的朝向与前置镜像，
+		// 拿到的就是设备坐标系的归一化点，无需再手动翻转
+		let devicePoint = layer.captureDevicePointConverted(fromLayerPoint: point)
 		viewModel.focusAtDevicePoint(devicePoint)
 		HapticManager.shared.light()
 

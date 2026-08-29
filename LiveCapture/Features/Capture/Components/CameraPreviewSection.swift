@@ -62,7 +62,6 @@ struct CameraPreviewSection: View {
 	let boxCenterInView: CGPoint?
 	let isAligned: Bool
 	let distanceToCenter: CGFloat?
-	let isFrontCamera: Bool
 	let onCompositionRectUpdate: (CGRect) -> Void
 	
 	// MARK: - 显示控制
@@ -89,7 +88,7 @@ struct CameraPreviewSection: View {
 			let canvas = CGRect(origin: .zero, size: previewGeo.size)
 
 			ZStack {
-				CameraPreviewView(session: session, isFrontCamera: isFrontCamera, holder: previewHolder)
+				CameraPreviewView(session: session, holder: previewHolder)
 					.frame(width: composition.width, height: composition.height)
 					.clipped()
 					.contentShape(Rectangle())
