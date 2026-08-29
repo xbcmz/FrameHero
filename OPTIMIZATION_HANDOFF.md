@@ -26,6 +26,13 @@
 - ⚠️ Bundle ID 已变：设备上旧 App（LiveCapture）需卸载重装，照片记录与 Keychain 中的 API Key 不会迁移（用户已确认接受）
 - 用户待办：①GitHub 仓库改名（gh CLI 未安装：网页 Settings → General → Rename，或安装 gh 后 `gh repo rename FrameHero`；GitHub 会自动重定向旧地址，本地 remote 无需改）②TRAE 工作区外层文件夹名 ③App 图标重绘
 
+## 已完成（第六批 2026-08-29：新 App 图标 + 导出原图直出/样式切换）
+
+- **App 图标重绘**：Swift + CoreGraphics 程序化渲染（脚本可复用调参），取景框角标 + AI 星芒 + 三分构图线，底色沿用 primaryGradient；三变体 icon-light / icon-dark / icon-tinted（tinted 为新增灰阶版，此前复用 dark），1024×1024 单尺寸
+- **导出样式切换**（照片浏览器导出预览页顶部）：「信息卡片 / 原图直出」segmented 切换，AppStorage key `exportUsesCard` 持久化记忆选择
+- 原图直出：PhotoStorageService 新增 `photoData(for:)` 读原始 JPEG 字节，保存时直接写入相册不经重编码（卡片模式仍存渲染 PNG）；卡片模式本身已无品牌水印（含日期/参数信息行）
+- 拍照入口在首页/图库/底部 Tab 三处均可达；导出入口为照片浏览器右上角下载按钮
+
 ## 已完成（2026-08-29：移除导出卡片品牌水印）
 
 - ShareCardGenerator 去掉底部品牌水印（Logo 图标 +「构妙 · LiveCompose」标题），loadLogo() 一并删除（logo-glass-LiveCompose 图片资源保留未删）

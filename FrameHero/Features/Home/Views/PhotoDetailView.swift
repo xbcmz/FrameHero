@@ -9,10 +9,15 @@ struct PhotoBrowserView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var currentIndex: Int
     @State private var showExportSheet = false
-    @State private var cardImage: UIImage?
+    @State private var exportImage: UIImage?
+    /// 原图直出时保存的原始 JPEG 字节（不经重编码）
+    @State private var exportRawData: Data?
     @State private var isGenerating = false
     @State private var saveSuccess = false
     @State private var loadedPhotos: [UUID: UIImage] = [:]
+    /// 导出样式：信息卡片（含日期/参数，无品牌水印）或原图直出。
+    /// AppStorage 持久化，下次导出沿用上次选择
+    @AppStorage("exportUsesCard") private var exportUsesCard = true
 
     init(records: [PhotoRecord], initialIndex: Int, photoProvider: @escaping (UUID) -> UIImage?) {
         self.records = records
@@ -52,7 +57,7 @@ struct PhotoBrowserView: View {
                     Spacer()
 
                     Button {
-                        generateExportCard()
+                        prepareExport()
                     } label: {
                         if isGenerating {
                             ProgressView()
@@ -110,44 +115,54 @@ struct PhotoBrowserView: View {
 
     private var exportPreviewView: some View {
         NavigationStack {
-            VStack {
-                if let cardImage {
-                    VStack(spacing: 0) {
-                        Image(uiImage: cardImage)
-                            .resizable()
-                            .aspectRatio(contentMode: .fit)
-                            .padding(16)
+            VStack(spacing: 0) {
+                // 导出样式切换（选择持久化，下次导出沿用）
+                Picker("导出样式", selection: $exportUsesCard) {
+                    Text("信息卡片").tag(true)
+                    Text("原图直出").tag(false)
+                }
+                .pickerStyle(.segmented)
+                .padding(.horizontal, 16)
+                .padding(.top, 12)
+                .onChange(of: exportUsesCard) { _, _ in
+                    regenerateExport()
+                }
 
-                        // 操作按钮
-                        VStack(spacing: 12) {
-                            Button {
-                                saveToPhotos(cardImage)
-                            } label: {
-                                HStack {
-                                    Image(systemName: saveSuccess ? "checkmark.circle.fill" : "square.and.arrow.down")
-                                    Text(saveSuccess ? "已保存" : "保存到相册")
-                                }
-                                .font(DesignSystem.Typography.headline)
-                                .foregroundColor(.white)
-                                .frame(maxWidth: .infinity)
-                                .padding(.vertical, 14)
-                                .background(
-                                    RoundedRectangle(cornerRadius: 12)
-                                        .fill(saveSuccess ? DesignSystem.Colors.success : DesignSystem.Colors.primary)
-                                )
+                if let exportImage {
+                    Image(uiImage: exportImage)
+                        .resizable()
+                        .aspectRatio(contentMode: .fit)
+                        .padding(16)
+
+                    // 操作按钮
+                    VStack(spacing: 12) {
+                        Button {
+                            saveExport()
+                        } label: {
+                            HStack {
+                                Image(systemName: saveSuccess ? "checkmark.circle.fill" : "square.and.arrow.down")
+                                Text(saveSuccess ? "已保存" : "保存到相册")
                             }
-                            .disabled(saveSuccess)
-                            .padding(.horizontal, 16)
-
-                            Text("图片将保存到系统相册")
-                                .font(DesignSystem.Typography.caption2)
-                                .foregroundColor(DesignSystem.Colors.textTertiary)
+                            .font(DesignSystem.Typography.headline)
+                            .foregroundColor(.white)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 14)
+                            .background(
+                                RoundedRectangle(cornerRadius: 12)
+                                    .fill(saveSuccess ? DesignSystem.Colors.success : DesignSystem.Colors.primary)
+                            )
                         }
-                        .padding(.bottom, 24)
+                        .disabled(saveSuccess)
+                        .padding(.horizontal, 16)
+
+                        Text(exportUsesCard ? "含拍摄日期与参数的信息卡片" : "保存原始 JPEG 照片，无任何装饰")
+                            .font(DesignSystem.Typography.caption2)
+                            .foregroundColor(DesignSystem.Colors.textTertiary)
                     }
+                    .padding(.bottom, 24)
                 } else {
                     Spacer()
-                    ProgressView("正在生成分享卡片...")
+                    ProgressView(exportUsesCard ? "正在生成分享卡片..." : "正在载入原图...")
                     Spacer()
                 }
             }
@@ -223,12 +238,25 @@ struct PhotoBrowserView: View {
 
     // MARK: - Export
 
-    private func generateExportCard() {
+    private func prepareExport() {
         guard let record = records[safe: currentIndex] else { return }
         isGenerating = true
         showExportSheet = true
+        generateExport(for: record)
+    }
 
-        let loadAndGenerate = {
+    /// 导出预览里切换样式后重新生成
+    private func regenerateExport() {
+        guard let record = records[safe: currentIndex] else { return }
+        exportImage = nil
+        exportRawData = nil
+        isGenerating = true
+        generateExport(for: record)
+    }
+
+    private func generateExport(for record: PhotoRecord) {
+        if exportUsesCard {
+            exportRawData = nil
             if let photo = loadedPhotos[record.id] {
                 generateCard(from: photo, record: record)
             } else {
@@ -242,8 +270,17 @@ struct PhotoBrowserView: View {
                     }
                 }
             }
+        } else {
+            // 原图直出：读存储的原始 JPEG 字节，不经重编码
+            DispatchQueue.global(qos: .userInitiated).async {
+                let data = PhotoStorageService.shared.photoData(for: record.id)
+                DispatchQueue.main.async {
+                    exportRawData = data
+                    exportImage = data.flatMap(UIImage.init)
+                    isGenerating = false
+                }
+            }
         }
-        loadAndGenerate()
     }
 
     private func generateCard(from photo: UIImage, record: PhotoRecord) {
@@ -259,17 +296,19 @@ struct PhotoBrowserView: View {
                 imageHeight: record.imageHeight
             )
             DispatchQueue.main.async {
-                self.isGenerating = false
-                self.cardImage = card
+                isGenerating = false
+                exportImage = card
             }
         }
     }
 
-    private func saveToPhotos(_ image: UIImage) {
+    private func saveExport() {
+        // 原图直出存原始 JPEG 字节；卡片模式存渲染 PNG
+        guard let data = exportRawData ?? exportImage?.pngData() else { return }
         PHPhotoLibrary.requestAuthorization(for: .addOnly) { status in
             guard status == .authorized || status == .limited else { return }
             PHPhotoLibrary.shared().performChanges({
-                PHAssetCreationRequest.forAsset().addResource(with: .photo, data: image.pngData()!, options: nil)
+                PHAssetCreationRequest.forAsset().addResource(with: .photo, data: data, options: nil)
             }) { success, _ in
                 DispatchQueue.main.async {
                     if success {

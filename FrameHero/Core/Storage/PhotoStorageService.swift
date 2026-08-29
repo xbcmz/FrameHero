@@ -122,6 +122,12 @@ final class PhotoStorageService {
         return FileManager.default.fileExists(atPath: url.path) ? url : nil
     }
 
+    /// 读取原始照片字节（原图直出导出用，不经重编码）
+    func photoData(for id: UUID) -> Data? {
+        guard let url = photoURL(for: id) else { return nil }
+        return try? Data(contentsOf: url)
+    }
+
     // MARK: - Private
 
     private func ensureDirectories() {
