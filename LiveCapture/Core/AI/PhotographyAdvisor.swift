@@ -301,8 +301,11 @@ final class PhotographyAdvisor {
         
         // MARK: 对焦建议
         if composition.person.detected {
-            // 有人像时，锁定主体对焦
-            strategy.focusPreference = .subjectLock
+            // 有人像时保持连续自动对焦。
+            // 注意不要在这里建议 subjectLock——本地引擎没有真实对焦点
+            // （focusPointOfInterest 只有用户点按时才有），
+            // 无点的 subjectLock 会触发单次锁焦，之后画面就再也不重新对焦了
+            strategy.focusPreference = .auto
             // 人像 → 浅景深偏好
             strategy.depthPreference = .shallow
         } else {

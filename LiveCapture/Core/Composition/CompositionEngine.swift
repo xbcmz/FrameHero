@@ -612,7 +612,8 @@ final class CompositionEngine {
         }
 
         // 人物太小 → 推荐更大的变焦（长焦）
-        if height < ideal * 0.8 {
+        // 阈值留出 ±30% 滞回带：太贴近理想值会在"推长焦/拉广角"之间来回振荡
+        if height < ideal * 0.7 {
             if currentZoom < 1.5 {
                 return .telephoto2x
             } else if currentZoom < 2.5 {
@@ -623,7 +624,7 @@ final class CompositionEngine {
         }
 
         // 人物太大 → 推荐更小的变焦（广角）
-        if height > ideal * 1.2 {
+        if height > ideal * 1.3 {
             if currentZoom > 2.5 {
                 return .telephoto2x
             } else if currentZoom > 1.5 {

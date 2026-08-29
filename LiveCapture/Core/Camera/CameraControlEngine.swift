@@ -64,6 +64,8 @@ final class CameraControlEngine {
     private var lastAppliedWBManual: Bool = false
     private var lastAppliedWBAuto: Bool = false
     private var lastAppliedZoom: CGFloat?
+    /// AI 变焦切换的最小间隔：无滞回的连续切换会让画面忽大忽小
+    private var lastLensApplyTime: Date?
     
     // MARK: - 初始化
     
@@ -373,15 +375,24 @@ final class CameraControlEngine {
             }
 
         case .aiAuto:
-            // AI 自动模式：根据镜头偏好选择
+            // AI 自动模式：根据镜头偏好选择。
+            // .auto = 保持当前变焦，绝不下发指令
+            guard strategy.lensPreference != .auto else { return }
+
+            // 冷却期：两次 AI 变焦至少间隔 3 秒。没有这个滞回，
+            // "推长焦→人在画面里变大→建议拉广角→人变小"会形成振荡
+            if let last = lastLensApplyTime,
+               Date().timeIntervalSince(last) < 3.0 {
+                return
+            }
+
             let targetFactor = calculateTargetZoom(for: strategy)
 
             // 只有当目标倍率与当前差距较大时才切换（避免频繁抖动）
             if abs(targetFactor - environment.currentZoomFactor) > 0.3 {
-                if lastAppliedZoom != targetFactor {
-                    camera.finalizeInteractiveZoom(at: targetFactor, smooth: true)
-                    lastAppliedZoom = targetFactor
-                }
+                lastLensApplyTime = Date()
+                camera.finalizeInteractiveZoom(at: targetFactor, smooth: true)
+                lastAppliedZoom = targetFactor
             }
         }
     }

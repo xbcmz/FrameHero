@@ -203,7 +203,10 @@ struct PhotographyStrategy: Equatable {
     // MARK: - 控制模式（每个参数独立）
     
     /// 镜头控制模式
-    var lensControl: ControlMode = .aiAuto
+    /// 默认 .locked：变焦是最直接的用户意图，AI 不应未经允许移动镜头
+    /// （原生相机从不自动变焦）。否则会形成"检测人太小→推长焦→人变大→
+    /// 拉广角"的反馈振荡，画面忽大忽小。需要 AI 控镜时再切到 AI 自动。
+    var lensControl: ControlMode = .locked
     
     /// 曝光控制模式
     var exposureControl: ControlMode = .aiAuto
