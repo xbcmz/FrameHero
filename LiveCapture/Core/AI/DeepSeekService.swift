@@ -14,13 +14,14 @@ import Foundation
 
 /// DeepSeek API 服务
 final class DeepSeekService: AIAdviceProvider {
-    
+
     // MARK: - 配置
-    
+
     private let apiKey: String
-    private let baseURL = "https://api.deepseek.com/v1/chat/completions"
-    private let model = "deepseek-chat"
-    
+    /// chat/completions 端点（支持设置页自定义接口地址）
+    private let endpoint: URL
+    private let model: String
+
     /// 当前请求的 task，用于取消
     private var currentTask: URLSessionDataTask?
 
@@ -31,8 +32,95 @@ final class DeepSeekService: AIAdviceProvider {
 
     // MARK: - 初始化
 
-    init(apiKey: String) {
+    /// - Parameters:
+    ///   - apiKey: DeepSeek API Key
+    ///   - baseURL: 接口基地址（默认官方地址；缺路径时自动补 /chat/completions）
+    ///   - model: 模型 ID（deepseek-chat / deepseek-reasoner）
+    init(apiKey: String,
+         baseURL: String = AIConfigurationStore.defaultBaseURL,
+         model: String = AIConfigurationStore.chatModel) {
         self.apiKey = apiKey
+        self.model = model
+
+        var trimmed = baseURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.hasSuffix("/") { trimmed.removeLast() }
+        if trimmed.lowercased().hasSuffix("/chat/completions") {
+            self.endpoint = URL(string: trimmed) ?? URL(string: "https://api.deepseek.com/v1/chat/completions")!
+        } else {
+            self.endpoint = URL(string: trimmed + "/chat/completions")
+                ?? URL(string: "https://api.deepseek.com/v1/chat/completions")!
+        }
+    }
+
+    // MARK: - 连接测试
+
+    /// 连接测试结果
+    enum ConnectionTestResult {
+        /// 成功，附带往返延迟（秒）
+        case success(latency: TimeInterval)
+    }
+
+    /// 测试 AI 服务连通性（设置页用）。
+    /// 用 GET /models 鉴权 + 测可达性，不消耗 token。
+    /// - Parameter completion: 主线程回调；成功返回往返延迟
+    static func testConnection(
+        apiKey: String,
+        baseURL: String,
+        completion: @escaping (Result<ConnectionTestResult, Error>) -> Void
+    ) {
+        var trimmed = baseURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.hasSuffix("/") { trimmed.removeLast() }
+        guard trimmed.lowercased().hasPrefix("https://"),
+              let modelsURL = URL(string: trimmed + "/models") else {
+            DispatchQueue.main.async {
+                completion(.failure(DeepSeekError.invalidBaseURL))
+            }
+            return
+        }
+
+        var request = URLRequest(url: modelsURL)
+        request.httpMethod = "GET"
+        request.timeoutInterval = 10
+        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+
+        let startTime = Date()
+        URLSession.shared.dataTask(with: request) { data, response, error in
+            let latency = Date().timeIntervalSince(startTime)
+
+            if let error = error {
+                DispatchQueue.main.async {
+                    completion(.failure(error))
+                }
+                return
+            }
+
+            guard let httpResponse = response as? HTTPURLResponse else {
+                DispatchQueue.main.async {
+                    completion(.failure(DeepSeekError.noData))
+                }
+                return
+            }
+
+            switch httpResponse.statusCode {
+            case 200:
+                DispatchQueue.main.async {
+                    completion(.success(.success(latency: latency)))
+                }
+            case 401, 403:
+                DispatchQueue.main.async {
+                    completion(.failure(DeepSeekError.invalidAPIKey))
+                }
+            case 429:
+                DispatchQueue.main.async {
+                    completion(.failure(DeepSeekError.rateLimit))
+                }
+            default:
+                let body = data.flatMap { String(data: $0.prefix(200), encoding: .utf8) } ?? ""
+                DispatchQueue.main.async {
+                    completion(.failure(DeepSeekError.serverError("HTTP \(httpResponse.statusCode) \(body)")))
+                }
+            }
+        }.resume()
     }
 
     // MARK: - AIAdviceProvider
@@ -50,7 +138,7 @@ final class DeepSeekService: AIAdviceProvider {
         let prompt = buildPrompt(from: compositionResult)
 
         // 构建请求
-        var request = URLRequest(url: URL(string: baseURL)!)
+        var request = URLRequest(url: endpoint)
         request.httpMethod = "POST"
         request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -378,9 +466,10 @@ enum DeepSeekError: Error {
     case noData
     case parseFailed
     case invalidAPIKey
+    case invalidBaseURL
     case rateLimit
     case serverError(String)
-    
+
     var localizedDescription: String {
         switch self {
         case .noData:
@@ -389,6 +478,8 @@ enum DeepSeekError: Error {
             return "解析 AI 响应失败"
         case .invalidAPIKey:
             return "API Key 无效"
+        case .invalidBaseURL:
+            return "接口地址无效（需要 https:// 开头）"
         case .rateLimit:
             return "请求太频繁，请稍后再试"
         case .serverError(let message):

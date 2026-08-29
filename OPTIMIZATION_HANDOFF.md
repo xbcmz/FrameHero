@@ -15,6 +15,14 @@
 - 注意：`project.yml` / `generate_xcode_project.py` 已被删除，**新增 .swift 文件必须手动注册进 `LiveCapture.xcodeproj/project.pbxproj`**（PBXBuildFile + PBXFileReference + 组 children + Sources phase 四处）。
 - git 有完整历史：`7ea6b6c` 是修复前基线，随时可 diff/回滚。
 
+## 已完成（第三批 2026-08-29：设置页 AI 助手）
+
+- 新增「AI 助手」设置区：云端开关（关 = 本地 Mock，零联网）、API Key 输入（SecureField + 显隐切换 + 保存/清除）、模型选择（deepseek-chat 通用 V3 / deepseek-reasoner 深度思考 R1）、连接测试（GET /models 鉴权 + 延迟显示，不消耗 token）、高级设置（自定义 Base URL 支持自建代理，缺路径自动补 /chat/completions，一键恢复默认）
+- **API Key 迁移到 Keychain**（新文件 `KeychainStore.swift` + `AIConfigurationStore.swift`）：不再依赖 Info.plist 明文；Info.plist 里的旧 Key 仍作兜底（`effectiveAPIKey` 读取顺序 Keychain → Info.plist），老用户升级无感
+- DeepSeekService 构造器支持自定义 baseURL/model，新增 static `testConnection(apiKey:baseURL:completion:)`
+- PhotographyAdvisor 动态选路：订阅 AIConfigurationStore.objectWillChange（200ms debounce），设置页改动即时切换 DeepSeek/Mock、更新 Key 与模型，相机页无需重启
+- 新文件已手动注册进 pbxproj 四处；Debug/Release 双配置编译通过
+
 ## 已完成（第二批 2026-08-29，9 项：P1 全部可代码项 + P2 六项）
 
 ### P1：专业参数滑杆与真实状态打通（原问题：滑杆假双向、与实际参数脱节）
@@ -70,9 +78,9 @@
 
 ### P2（代码质量）
 4. CoreML 模型输入改为方形裁剪后，建议用真机对比新旧识别质量（见上方风险标注）
-5. DeepSeekService：API Key 明文在 Info.plist（上线前换 Keychain 或服务端代理；超时与代际标记已修）
+5. ~~API Key 明文在 Info.plist~~ 已解决：设置页配置 + Keychain 存储（第三批），Info.plist 仅兜底，可择机从 Info.plist 移除 DeepSeekAPIKey 字段
 6. CameraControlEngine/Advisor 对 debounce 策略的双通道评估还有优化空间；`cameraManager.zoomState` 在 sessionQueue 上被跨线程读取（历史模式，可择机重构为参数直传）
-7. 设计文档 `../ai-photography-assistant-design/ai-photography-assistant-design.html` 里有五维构图评分、机位推荐、Qwen3-VL、ARKit 的演进方案，可与代码对照推进
+7. 设计文档 `../ai-photography-assistant-design/ai-photography-assistant-design.html` 里有五维构图评分、机位推荐、Qwen3-VL、ARKit 的演进方案，可与代码对照推进（AI 助手设置区已为多 provider 预留：AIConfigurationStore + AIAdviceProvider 协议，接 Qwen3-VL 只需新增实现）
 8. 图库（HomeView/GalleryView/SettingsView/ShareCardGenerator）尚未审查过
 
 ### P3（功能演进）

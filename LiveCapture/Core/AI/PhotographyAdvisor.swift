@@ -19,6 +19,7 @@
 
 import Foundation
 import UIKit
+import Combine
 
 /// 完整的摄影分析结果（构图评分 + 目标构图 + AI 建议）
 struct PhotographyAnalysisResult {
@@ -87,27 +88,29 @@ struct CameraStrategySuggestion: Equatable {
 final class PhotographyAdvisor {
     
     // MARK: - 依赖
-    
+
     private let detector: AestheticCropDetector
     private let compositionEngine: CompositionEngine
-    private let aiProvider: AIAdviceProvider
-    
+    private var aiProvider: AIAdviceProvider
+    /// 监听 AI 配置变化（设置页改 Key/开关/模型后自动重建提供方，无需重启）
+    private var configCancellable: AnyCancellable?
+
     // MARK: - 状态
-    
+
     /// 是否正在分析中（用于 UI 显示加载状态）
     private(set) var isAnalyzing = false
-    
+
     /// 上一次的分析结果
     private(set) var lastResult: PhotographyAnalysisResult?
-    
+
     /// AI 建议节流间隔（秒）—— 避免频繁调用 API
     private let aiThrottleInterval: TimeInterval = 3.0
-    
+
     /// 上次 AI 请求时间
     private var lastAIRequestTime: Date?
-    
+
     // MARK: - 初始化
-    
+
     init(
         detector: AestheticCropDetector = AestheticCropDetector(),
         compositionEngine: CompositionEngine = CompositionEngine(),
@@ -115,18 +118,32 @@ final class PhotographyAdvisor {
     ) {
         self.detector = detector
         self.compositionEngine = compositionEngine
-        
-        // 如果没传 aiProvider，自动根据配置选择
+
+        // 显式传入的 provider 优先（测试/注入用），否则按配置自动选择
         if let provider = aiProvider {
             self.aiProvider = provider
         } else {
-            let keyProvider = APIKeyProvider.shared
-            if keyProvider.hasDeepSeekKey, let key = keyProvider.deepSeekAPIKey {
-                self.aiProvider = DeepSeekService(apiKey: key)
-            } else {
-                self.aiProvider = MockPhotographer()
-            }
+            self.aiProvider = Self.makeProvider(from: AIConfigurationStore.shared)
+            // 设置页改动后自动切换 DeepSeek/Mock、更新 Key 和模型
+            configCancellable = AIConfigurationStore.shared.objectWillChange
+                .debounce(for: .milliseconds(200), scheduler: DispatchQueue.main)
+                .sink { [weak self] _ in
+                    guard let self else { return }
+                    let config = AIConfigurationStore.shared
+                    let newProvider = Self.makeProvider(from: config)
+                    self.aiProvider.cancel()
+                    self.aiProvider = newProvider
+                }
         }
+    }
+
+    /// 按当前配置选择 AI 提供方：
+    /// 云端开关开且有 Key → DeepSeekService；否则本地 Mock（零联网）
+    private static func makeProvider(from config: AIConfigurationStore) -> AIAdviceProvider {
+        guard config.cloudAIEnabled, let key = config.effectiveAPIKey else {
+            return MockPhotographer()
+        }
+        return DeepSeekService(apiKey: key, baseURL: config.baseURL, model: config.model)
     }
     
     // MARK: - 公开方法

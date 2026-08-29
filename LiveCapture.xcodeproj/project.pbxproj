@@ -26,6 +26,8 @@
 		4CC5234A52AED9198D90AA11 /* AdacropStudentBBox.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2DD24AA80903675C46537163 /* AdacropStudentBBox.swift */; };
 		5027758D37742EA817051F2A /* MainTabView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CFAA264D47DAEF126F405FAA /* MainTabView.swift */; };
 		517B50AEF40CF425B163EE70 /* AIAdviceProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = C51C273EFE2FCA7E99089DE2 /* AIAdviceProvider.swift */; };
+		A1B2C3D4E5F60718293A4B61 /* KeychainStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60718293A4B62 /* KeychainStore.swift */; };
+		A1B2C3D4E5F60718293A4B71 /* AIConfigurationStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60718293A4B72 /* AIConfigurationStore.swift */; };
 		5282479A64587F7E6992614C /* AdacropTeacherActor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 59E2374320C1069976212848 /* AdacropTeacherActor.swift */; };
 		52C72D16B4AB3AD32A9E9F8B /* DesignSystem.swift in Sources */ = {isa = PBXBuildFile; fileRef = 04B4979E1DDB74DCFB654003 /* DesignSystem.swift */; };
 		56BB184825DCC81909E6232A /* CameraManager+VideoOutput.swift in Sources */ = {isa = PBXBuildFile; fileRef = 018E2EB5B324EE215A3BB98B /* CameraManager+VideoOutput.swift */; };
@@ -128,6 +130,8 @@
 		B830931CCF0BF9946BA3DEFC /* PhotoDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoDetailView.swift; sourceTree = "<group>"; };
 		BFD8C60BA9FF20D6B6FB2C15 /* HapticManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HapticManager.swift; sourceTree = "<group>"; };
 		C51C273EFE2FCA7E99089DE2 /* AIAdviceProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIAdviceProvider.swift; sourceTree = "<group>"; };
+		A1B2C3D4E5F60718293A4B62 /* KeychainStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainStore.swift; sourceTree = "<group>"; };
+		A1B2C3D4E5F60718293A4B72 /* AIConfigurationStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIConfigurationStore.swift; sourceTree = "<group>"; };
 		C5CA64456BF64897E46E2B70 /* PhotoRecord.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoRecord.swift; sourceTree = "<group>"; };
 		C8CE5C7C7AACD89E2CA8B364 /* MotionStabilityMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MotionStabilityMonitor.swift; sourceTree = "<group>"; };
 		C8E64A3ED63555404BA3EB16 /* APIKeyProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIKeyProvider.swift; sourceTree = "<group>"; };
@@ -404,6 +408,8 @@
 			isa = PBXGroup;
 			children = (
 				C51C273EFE2FCA7E99089DE2 /* AIAdviceProvider.swift */,
+				A1B2C3D4E5F60718293A4B62 /* KeychainStore.swift */,
+				A1B2C3D4E5F60718293A4B72 /* AIConfigurationStore.swift */,
 				C8E64A3ED63555404BA3EB16 /* APIKeyProvider.swift */,
 				22B16C76D73521F899F32AC4 /* DeepSeekService.swift */,
 				086D8BFD7A824FD355B92AF4 /* MockPhotographer.swift */,
@@ -581,6 +587,8 @@
 			buildActionMask = 2147483647;
 			files = (
 				517B50AEF40CF425B163EE70 /* AIAdviceProvider.swift in Sources */,
+				A1B2C3D4E5F60718293A4B61 /* KeychainStore.swift in Sources */,
+				A1B2C3D4E5F60718293A4B71 /* AIConfigurationStore.swift in Sources */,
 				704F8F9B3D3EBD4DBB038146 /* AIGuidanceOverlayView.swift in Sources */,
 				829E184F5684EA8F80F17AF6 /* APIKeyProvider.swift in Sources */,
 				77705B6F48027E00CFDD486F /* AdacropStudentActor.swift in Sources */,
