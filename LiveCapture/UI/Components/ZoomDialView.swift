@@ -172,17 +172,14 @@ struct ZoomDialView: View {
     }
 
     private func dialView(width: CGFloat) -> some View {
-        // 刻度：0.5~2 区间每 0.5 一格，2 以上每 1 一格
+        // 刻度点：只标近段（0.5~2×，间隔 0.5）。
+        // 远段（2~25×）被压缩到半盘宽度，若每 1× 一个点会有 23 个点
+        // 挤在一起像一排噪点，远段的信息由数字标注承担
         var ticks: [CGFloat] = []
         var t = range.lowerBound
         while t <= midPoint + 0.001 {
             ticks.append(t)
             t += 0.5
-        }
-        t = midPoint + 1
-        while t <= dialMax + 0.001 {
-            ticks.append(min(t, dialMax))
-            t += 1
         }
 
         // 远端稀疏标注（近端已有焦段标签）；
