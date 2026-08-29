@@ -8,7 +8,7 @@ struct SettingsView: View {
 
     // AI 配置（Key 存 Keychain，其余存 UserDefaults）
     @ObservedObject private var aiConfig = AIConfigurationStore.shared
-    @AppStorage("aiAdviceEnabled") private var aiAdviceEnabled: Bool = false
+    @AppStorage("aiAdviceEnabled") private var aiAdviceEnabled: Bool = true
     @State private var apiKeyDraft: String = ""
     @State private var showAPIKey: Bool = false
     @State private var showAdvancedAI: Bool = false
@@ -195,8 +195,8 @@ struct SettingsView: View {
 
                 ToggleRow(
                     icon: "lightbulb",
-                    title: "拍摄时给出 AI 建议",
-                    description: "拍摄页顶部显示构图评分与改进建议",
+                    title: "AI 构图助手",
+                    description: "拍摄页提供场景识别与实时构图引导",
                     isOn: $aiAdviceEnabled
                 )
             }

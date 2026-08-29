@@ -2,50 +2,15 @@
 //  CameraPreviewSection.swift
 //  FrameHero
 //
-//  相机预览区域组件
+//  相机预览区域组件（AI 构图版）
 //
 //  ## 文件作用
-//  组合相机预览视图和内容覆盖层
-//  负责计算和管理 3:4 构图区域
-//  处理视图尺寸变化时的布局更新
+//  组合相机预览视图与 AI 构图引导覆盖层，
+//  负责计算和管理 3:4 构图区域、处理视图尺寸变化。
 //
-//  ## 主要组件
-//  ### CameraPreviewSection
-//  相机预览区域视图
-//
-//  ## 输入参数
-//  - session: AVCaptureSession - 相机会话对象
-//  - compositionRect: CGRect - 已计算的构图区域
-//  - canvasSize: CGSize - 画布尺寸
-//  - cropRectInView: CGRect? - 检测到的裁切框
-//  - boxCenterInView: CGPoint? - 追踪点位置
-//  - isAligned: Bool - 是否对齐
-//  - distanceToCenter: CGFloat? - 到中心距离
-//  - isFrontCamera: Bool - 是否为前置摄像头（用于翻转预览）
-//  - onCompositionRectUpdate: (CGRect) -> Void - 构图区域更新回调
-//
-//  ## 子组件
-//  - CameraPreviewView: 实际的相机预览层
-//  - ContentOverlayView: 覆盖层（显示框线、引导等）
-//
-//  ## 布局逻辑
-//  - 使用 GeometryReader 获取可用空间
-//  - 调用 compositionRect(in:) 计算 3:4 区域
-//  - 将预览居中显示在构图区域内
-//  - 覆盖层覆盖整个画布
-//
-//  ## 辅助方法
-//  - compositionRect(in:): 计算 3:4 构图区域
-//    参数: size - CGSize 容器尺寸
-//    返回: CGRect 构图区域
-//    逻辑:
-//      - 宽度填满容器
-//      - 高度按 4:3 比例计算
-//      - 垂直居中
-//
-//  ## 响应式更新
-//  - onAppear: 初始化时通知构图区域
-//  - onChange(of: size): 尺寸变化时重新计算并通知
+//  ## 覆盖层
+//  - CompositionCoachOverlayView：AI 构图会话激活时绘制
+//    （淡三分线 + 场景标签 + 一行建议 chip），平时完全透明
 //
 
 import SwiftUI
@@ -58,23 +23,9 @@ struct CameraPreviewSection: View {
 	let session: AVCaptureSession
 	let compositionRect: CGRect
 	let canvasSize: CGSize
-	let cropRectInView: CGRect?
-	let boxCenterInView: CGPoint?
-	let isAligned: Bool
-	let distanceToCenter: CGFloat?
+
+	/// 构图区域尺寸变化回调（引导计算需要视图尺寸）
 	let onCompositionRectUpdate: (CGRect) -> Void
-	
-	// MARK: - 显示控制
-	/// 是否显示裁切引导 UI（裁切框、追踪点、中心十字）
-	var showCropGuide: Bool = true
-	
-	// MARK: - AI 引导
-	/// AI 引导结果
-	let guidanceResult: GuidanceResult?
-	/// 是否处于 AI 引导模式
-	let isAIGuidanceActive: Bool
-	/// AI 建议标题（可选）
-	let adviceTitle: String? = nil
 
 	// MARK: - 点按对焦
 	/// 预览层持有者（用于坐标转换）
@@ -82,10 +33,15 @@ struct CameraPreviewSection: View {
 	/// 点按预览回调（参数为预览视图内的局部坐标）
 	var onTapInPreview: ((CGPoint) -> Void)? = nil
 
+	// MARK: - AI 构图会话
+	let coachPhase: CaptureViewModel.CoachPhase
+	let coachSceneLabel: String?
+	let coachSuggestion: String
+	let coachGuidance: GuidanceResult?
+
 	var body: some View {
 		GeometryReader { previewGeo in
 			let composition = Self.compositionRect(in: previewGeo.size)
-			let canvas = CGRect(origin: .zero, size: previewGeo.size)
 
 			ZStack {
 				CameraPreviewView(session: session, holder: previewHolder)
@@ -101,24 +57,16 @@ struct CameraPreviewSection: View {
 							}
 					)
 					.position(x: composition.midX, y: composition.midY)
-				
-				ContentOverlayView(
-					compositionRect: composition,
-					canvasRect: canvas,
-					cropRectInView: cropRectInView,
-					boxCenterInView: boxCenterInView,
-					isAligned: isAligned,
-					distanceToCenter: distanceToCenter,
-					showCropGuide: showCropGuide
-				)
-				
-				// AI 引导覆盖层（在原有覆盖层之上）
-				AIGuidanceOverlayView(
-					guidanceResult: guidanceResult,
-					isActive: isAIGuidanceActive,
-					adviceTitle: adviceTitle,
+
+				CompositionCoachOverlayView(
+					phase: coachPhase,
+					sceneLabel: coachSceneLabel,
+					suggestion: coachSuggestion,
+					guidance: coachGuidance,
 					compositionRect: composition
 				)
+				.frame(width: composition.width, height: composition.height)
+				.position(x: composition.midX, y: composition.midY)
 			}
 			.onAppear {
 				onCompositionRectUpdate(composition)
@@ -128,7 +76,7 @@ struct CameraPreviewSection: View {
 			}
 		}
 	}
-	
+
 	/// 根据容器尺寸计算 3:4 构图区域
 	private static func compositionRect(in size: CGSize) -> CGRect {
 		let width = size.width

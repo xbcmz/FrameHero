@@ -64,12 +64,10 @@ import SwiftUI
 /// 顶部控制栏
 struct TopControlBar: View {
 	let userGuidanceText: String
-	let showDebugInfo: Bool
 	let isAutoCaptureEnabled: Bool
 	let captureDelay: Double
 
 	let onBack: () -> Void
-	let onToggleDebug: () -> Void
 	let onToggleCamera: () -> Void
 	let onToggleAutoCapture: () -> Void
 	let onSetCaptureDelay: (Double) -> Void
@@ -84,7 +82,7 @@ struct TopControlBar: View {
 
 			Spacer()
 
-			// 中间显示用户引导
+			// 中间显示瞬态提示（照片已保存等）
 			if !userGuidanceText.isEmpty {
 				UserGuidanceView(guidanceText: userGuidanceText)
 			}
@@ -93,19 +91,6 @@ struct TopControlBar: View {
 
 			// 右侧菜单按钮
 			Menu {
-				#if DEBUG
-				// 调试面板是开发向工具，量产构建不显示入口
-				Button {
-					HapticManager.shared.selection()
-					onToggleDebug()
-				} label: {
-					Label(showDebugInfo ? "隐藏调试信息" : "显示调试信息",
-						  systemImage: showDebugInfo ? "eye.slash" : "eye")
-				}
-
-				Divider()
-				#endif
-
 				// 相机设置部分
 				Menu {
 					Button {
@@ -114,14 +99,6 @@ struct TopControlBar: View {
 					} label: {
 						Label("切换镜头", systemImage: "arrow.triangle.2.circlepath.camera")
 					}
-
-					Button {
-						// 预留：镜头锁定功能
-					} label: {
-						Label("锁定焦点（待实现）", systemImage: "lock.circle")
-					}
-					.disabled(true)
-
 				} label: {
 					Label("相机设置", systemImage: "camera")
 				}

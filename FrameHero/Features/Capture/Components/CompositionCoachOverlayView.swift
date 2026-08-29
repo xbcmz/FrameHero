@@ -1,0 +1,186 @@
+//
+//  CompositionCoachOverlayView.swift
+//  FrameHero
+//
+//  AI 构图引导覆盖层（借鉴 Doka Cam 的极简范式）
+//
+//  ## 设计原则
+//  - 平时不出现任何东西；AI 构图会话激活后才绘制
+//  - 极简元素：淡三分线（参照系）+ 一条建议 chip（一行动作指令）+ 小状态图标
+//  - 达标即退场：构图完成时三分线淡出，只留绿色确认态
+//  - 无分数、无满屏箭头、无常驻卡片
+//
+
+import SwiftUI
+
+#if os(iOS)
+
+/// AI 构图引导覆盖层
+struct CompositionCoachOverlayView: View {
+
+    /// 会话阶段（定义在 CaptureViewModel，idle = 会话未激活不渲染）
+    let phase: CaptureViewModel.CoachPhase
+    /// 场景标签（如"美食场景"，nil 不显示）
+    let sceneLabel: String?
+    /// 一行建议指令
+    let suggestion: String
+    /// 实时引导结果（驱动状态图标，已做前置镜像校正）
+    let guidance: GuidanceResult?
+    /// 3:4 构图区域（线与 chip 都画在这个区域内）
+    let compositionRect: CGRect
+
+    @State private var pulse = false
+    @State private var scanProgress: CGFloat = 0
+
+    var body: some View {
+        ZStack {
+            if phase == .idle { Color.clear }
+            if phase == .guiding {
+                thirdsGrid
+            }
+
+            // 顶部状态图标
+            VStack(spacing: 0) {
+                statusIcon
+                    .frame(height: 44)
+                    .padding(.top, 10)
+                Spacer()
+            }
+
+            // 底部建议 chip
+            VStack(spacing: 0) {
+                Spacer()
+                suggestionChip
+                    .padding(.bottom, 14)
+            }
+        }
+        .animation(.easeInOut(duration: 0.25), value: phase)
+        .animation(.easeInOut(duration: 0.25), value: suggestion)
+        .allowsHitTesting(false)
+    }
+
+    // MARK: - 三分构图线
+
+    private var thirdsGrid: some View {
+        Canvas { context, size in
+            let alpha: Double = phase == .achieved ? 0.10 : 0.28
+            var path = Path()
+            for fraction in [1.0 / 3.0, 2.0 / 3.0] {
+                let x = size.width * fraction
+                path.move(to: CGPoint(x: x, y: 0))
+                path.addLine(to: CGPoint(x: x, y: size.height))
+                let y = size.height * fraction
+                path.move(to: CGPoint(x: 0, y: y))
+                path.addLine(to: CGPoint(x: size.width, y: y))
+            }
+            context.stroke(path, with: .color(.white.opacity(alpha)), lineWidth: 1)
+        }
+        .allowsHitTesting(false)
+    }
+
+    // MARK: - 状态图标
+
+    @ViewBuilder
+    private var statusIcon: some View {
+        switch phase {
+        case .analyzing:
+            VStack(spacing: 6) {
+                Image(systemName: "sparkles")
+                    .font(.system(size: 22, weight: .medium))
+                    .foregroundColor(.white)
+                    .opacity(pulse ? 1.0 : 0.45)
+                Text("正在分析场景")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundColor(.white.opacity(0.85))
+            }
+            .onAppear { pulse = true }
+        case .guiding:
+            if let guidance {
+                let name = iconName(for: guidance)
+                let color = tintColor(for: guidance)
+                Image(systemName: name)
+                    .font(.system(size: 26, weight: .semibold))
+                    .foregroundColor(color)
+                    .shadow(color: .black.opacity(0.45), radius: 3, x: 0, y: 1)
+                    .opacity(pulse ? 1.0 : 0.7)
+            }
+        case .achieved:
+            Image(systemName: "checkmark.circle.fill")
+                .font(.system(size: 30, weight: .semibold))
+                .foregroundColor(.green)
+                .shadow(color: .black.opacity(0.45), radius: 3, x: 0, y: 1)
+        case .idle:
+            EmptyView()
+        }
+    }
+
+    // MARK: - 建议 chip
+
+    private var suggestionChip: some View {
+        HStack(spacing: 8) {
+            if let sceneLabel, !sceneLabel.isEmpty {
+                Text(sceneLabel)
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundColor(chipAccent)
+                    .padding(.horizontal, 7)
+                    .padding(.vertical, 3)
+                    .background(Capsule().fill(chipAccent.opacity(0.18)))
+            }
+
+            Text(suggestion)
+                .font(.system(size: 14, weight: .medium))
+                .foregroundColor(.white)
+                .lineLimit(1)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(
+            Capsule().fill(Color.black.opacity(0.55))
+        )
+        .overlay(
+            Capsule().stroke(chipAccent.opacity(phase == .achieved ? 0.9 : 0.35), lineWidth: 1)
+        )
+    }
+
+    private var chipAccent: Color {
+        switch phase {
+        case .analyzing, .idle: return .white
+        case .achieved: return .green
+        case .guiding:
+            if let guidance {
+                return tintColor(for: guidance)
+            }
+            return .yellow
+        }
+    }
+
+    // MARK: - Helpers
+
+    private func iconName(for guidance: GuidanceResult) -> String {
+        if guidance.state == .nearlyOptimal { return "sparkles" }
+        switch guidance.distanceDirection {
+        case .moveCloser: return "arrow.down.right"
+        case .moveFarther: return "arrow.up.left"
+        default: break
+        }
+        switch guidance.horizontalDirection {
+        case .moveLeft: return "arrow.left"
+        case .moveRight: return "arrow.right"
+        default: break
+        }
+        switch guidance.verticalDirection {
+        case .moveUp: return "arrow.up"
+        case .moveDown: return "arrow.down"
+        default: return "hand.draw"
+        }
+    }
+
+    private func tintColor(for guidance: GuidanceResult) -> Color {
+        switch guidance.state {
+        case .adjusting: return .white
+        case .nearlyOptimal: return .yellow
+        case .optimal: return .green
+        }
+    }
+}
+#endif
