@@ -1,7 +1,23 @@
 # LiveCapture 优化交接文档
 
 > 用途：开新对话时让 AI 先读本文件（说「先读 OPTIMIZATION_HANDOFF.md」即可接上进度）。
-> 更新时间：2026-08-29（第五批完成，项目已更名为 FrameHero（App 名不用中文））。GitHub 已同步（origin: git@github.com:xbcmz/LiveCapture.git，分支 main；仓库待用户手动改名 FrameHero）。
+> 更新时间：2026-08-29（dev 分支完成第七批：产品范式重构，AI 构图成为主体验）。GitHub origin: git@github.com:xbcmz/FrameHero.git；main = v1.0.0 稳定基线（旧范式），dev = 新范式开发线。
+
+## 第七批（dev 分支，2026-08-29：产品范式重构——AI 构图成为主体验）
+
+> 背景：用户判断原方向（LiveCapture 魔法棒 + AI 贴片）与初衷背离，对标可颂「灵感跟拍」（场景识别→配方建议）与 Doka Cam（一次触发→极简 AR 引导）重构拍摄页。
+
+- **魔法棒流水线整体下线**：构图流水线开关、裁切框/追踪点/中心圆、BoxCenterManager 对齐、CoreML AdaCrop 裁切检测、9 阶段状态机全部移除；CameraControlEngine 三态控制、点按对焦、变焦盘保留，自动拍摄改造后复用（构图达标触发）
+- **新增「AI 构图会话」（Doka 式一次触发）**：快门左侧 sparkle 按钮 → CoachPhase 状态机（idle/analyzing/guiding/achieved）
+  - SceneClassifier（新文件）：VNClassifyImageRequest 多帧投票 + 滞回 → 7 类场景（人像/美食/夜景/风景/街拍/文档/通用）
+  - 场景 → 参数预设：只改写 aiAuto 参数（人像=主体锁定+浅景深，美食=微距+自然白平衡，夜景=夜景+低噪，风景=超广角+深景深，街拍=凝固运动）
+  - 构图引导：CompositionGuidanceEngine 数据层复用 → CompositionCoachOverlayView（新文件）：淡三分线 + 场景标签 + 一行建议 chip，达标即绿色确认 + 可选自动拍摄
+- **DeepSeek 退出实时路径**：PhotographyAdvisor 新增 `isCloudAdviceEnabled`（默认 false），实时引导纯本地 Vision 零延迟；LLM 留给拍后点评（未实现），换模型只需换 aiProvider 实现
+- **删除文件（6）**：DebugPanel / AIGuidanceOverlayView / CompositionAdviceCard / ContentOverlayView / BoxCenterManager / CoreMLCropDetector（检测协议 CropDetectionStrategy.swift 保留，DetectionMode 枚举在其中）；UniformPointSmoother 从 BoxCenterManager 迁回 UniformSmoother.swift
+- CaptureViewModel 1322 行 → ~700 行；快门评分快照仅在 AI 会话中产生（未开会话的照片无评分）；`aiAdviceEnabled` 语义改为「AI 构图入口开关」，默认开
+- 已知待调：场景识别粒度（系统分类器较粗）、无主体场景的目标构图质量、chip 文案节奏；真机验证清单：会话首帧分析速度、场景切换滞回手感、前置镜像指令方向
+
+## 版本基线与分支约定
 
 ## 项目位置与验证命令
 
