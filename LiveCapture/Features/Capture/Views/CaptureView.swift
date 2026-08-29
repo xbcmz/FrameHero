@@ -334,24 +334,23 @@ struct CaptureView: View {
 				Spacer()
 					.frame(width: 50)
 
-				// 中间变焦环
+				// 中间变焦控件（原生风格：点按焦段 / 长按唤出细分变焦盘）
 				Spacer()
-				ZoomRingView(
-					config: .init(
-						presets: viewModel.zoomPresets,
-						range: viewModel.zoomRange,
-						state: viewModel.zoomState,
-						onPresetTap: { preset in
-							viewModel.selectZoomPreset(preset)
-						},
-						onDragChanged: { factor in
-							viewModel.updateZoomInteractively(to: factor)
-						},
-						onDragEnded: { factor in
-							viewModel.finalizeZoomInteractively(at: factor, smooth: true)
-						}
-					)
+				ZoomDialView(
+					presets: viewModel.zoomPresets,
+					range: viewModel.zoomRange,
+					currentFactor: viewModel.zoomState.currentFactor,
+					onPresetTap: { preset in
+						viewModel.selectZoomPreset(preset)
+					},
+					onLiveZoom: { factor in
+						viewModel.updateZoomInteractively(to: factor)
+					},
+					onCommitZoom: { factor in
+						viewModel.finalizeZoomInteractively(at: factor, smooth: true)
+					}
 				)
+				.padding(.horizontal, 12)
 				Spacer()
 
 				// 右侧流水线开关按钮
@@ -503,31 +502,6 @@ struct CaptureView: View {
 		}
 	}
 	
-	@ViewBuilder
-	private var zoomRing: some View {
-		let span = viewModel.zoomRange.upperBound - viewModel.zoomRange.lowerBound
-		if span > CGFloat(0.05) || viewModel.zoomPresets.count > 1 {
-			ZoomRingView(
-				config: .init(
-					presets: viewModel.zoomPresets,
-					range: viewModel.zoomRange,
-					state: viewModel.zoomState,
-					onPresetTap: { preset in
-						viewModel.selectZoomPreset(preset)
-					},
-					onDragChanged: { factor in
-						viewModel.updateZoomInteractively(to: factor)
-					},
-					onDragEnded: { factor in
-						viewModel.finalizeZoomInteractively(at: factor, smooth: true)
-					}
-				)
-			)
-			//.frame(height: 120)
-			.transition(.opacity.combined(with: .move(edge: .bottom)))
-		}
-	}
-
 	private var pipelineToggleButton: some View {
 		Button {
 			HapticManager.shared.light()
