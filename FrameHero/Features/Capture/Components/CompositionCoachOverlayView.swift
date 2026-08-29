@@ -35,8 +35,10 @@ struct CompositionCoachOverlayView: View {
     var body: some View {
         ZStack {
             if phase == .idle { Color.clear }
-            if phase == .guiding {
+            if phase == .guiding || phase == .achieved {
                 thirdsGrid
+                    .opacity(phase == .achieved ? 0.35 : 1.0)
+                    .animation(.spring(response: 0.5, dampingFraction: 0.85), value: phase)
             }
 
             // 顶部集群：状态图标 + 建议 chip。
@@ -142,6 +144,7 @@ struct CompositionCoachOverlayView: View {
                     .padding(.horizontal, 7)
                     .padding(.vertical, 3)
                     .background(Capsule().fill(chipAccent.opacity(0.18)))
+                    .transition(.scale(scale: 0.6, anchor: .leading).combined(with: .opacity))
             }
 
             Text(suggestion)
@@ -157,6 +160,7 @@ struct CompositionCoachOverlayView: View {
         .overlay(
             Capsule().stroke(chipAccent.opacity(phase == .achieved ? 0.9 : 0.35), lineWidth: 1)
         )
+        .animation(.spring(response: 0.35, dampingFraction: 0.7), value: sceneLabel)
     }
 
     private var chipAccent: Color {
@@ -174,21 +178,12 @@ struct CompositionCoachOverlayView: View {
     // MARK: - Helpers
 
     private func iconName(for guidance: GuidanceResult) -> String {
-        if guidance.state == .nearlyOptimal { return "sparkles" }
-        switch guidance.distanceDirection {
-        case .moveCloser: return "arrow.down.right"
-        case .moveFarther: return "arrow.up.left"
-        default: break
-        }
-        switch guidance.horizontalDirection {
-        case .moveLeft: return "arrow.left"
-        case .moveRight: return "arrow.right"
-        default: break
-        }
-        switch guidance.verticalDirection {
-        case .moveUp: return "arrow.up"
-        case .moveDown: return "arrow.down"
-        default: return "hand.draw"
+        // 图标只表达"状态"，具体方向由 chip 文字承载（方向常是复合的，
+        // 单箭头表达不了"向左+靠近"这类组合指令）
+        switch guidance.state {
+        case .adjusting: return "camera.viewfinder"
+        case .nearlyOptimal: return "sparkles"
+        case .optimal: return "checkmark.circle.fill"
         }
     }
 

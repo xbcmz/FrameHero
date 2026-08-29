@@ -175,7 +175,18 @@ struct CaptureView: View {
 				}
 				.frame(maxWidth: .infinity)
 
-				CaptureButton(isScaled: captureAnimationScale > 1.5) {
+				CaptureButton(
+					isScaled: captureAnimationScale > 1.5,
+					countdownProgress: viewModel.autoCaptureCountdown.map {
+						$0.total > 0 ? $0.remain / $0.total : 0
+					},
+					countdownSecondsLeft: viewModel.autoCaptureCountdown.map {
+						Int(ceil($0.remain))
+					},
+					isAchieved: viewModel.coachPhase == .achieved
+						&& viewModel.autoCaptureCountdown == nil,
+					burstAction: viewModel.isAICompositionEnabled ? { viewModel.capturePhoto() } : nil
+				) {
 					HapticManager.shared.capture()
 					viewModel.capturePhoto()
 				}
@@ -231,6 +242,7 @@ struct CaptureView: View {
 					presets: viewModel.zoomPresets,
 					range: viewModel.zoomRange,
 					currentFactor: viewModel.zoomState.currentFactor,
+					recommendedFactor: viewModel.sceneRecommendedFactor,
 					onPresetTap: { preset in
 						viewModel.selectZoomPreset(preset)
 					},
@@ -280,7 +292,15 @@ struct CaptureView: View {
 		}
 		.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
 		.padding(.trailing, 10)
-		.padding(.bottom, 300)
+		.padding(.bottom, proColumnBottomPadding)
+	}
+
+	/// 参数列底部避让高度 = 变焦盘(96) + 间距(18) + 快门行(84) + 呼吸空间；
+	/// 前置等无变焦盘场景相应减小（旧值 300 是三行布局的遗物，会压到 AI/翻转键）
+	private var proColumnBottomPadding: CGFloat {
+		let span = viewModel.zoomRange.upperBound - viewModel.zoomRange.lowerBound
+		let hasZoomDial = span > CGFloat(0.05) || viewModel.zoomPresets.count > 1
+		return hasZoomDial ? 248 : 148
 	}
 
 	/// 参数对应的入口按钮样式
@@ -406,8 +426,13 @@ struct CaptureView: View {
 
 	// MARK: - Gestures
 
-	/// 点按对焦/曝光：预览层本地坐标 → 设备坐标，并显示对焦框动画
+	/// 点按预览：AI 会话中 = 退出会话（单手也能结束引导，不必去够 sparkle 键）；
+	/// 空闲时 = 点按对焦/曝光
 	private func handleTapToFocus(at point: CGPoint) {
+		if viewModel.coachPhase != .idle {
+			viewModel.stopAIComposition()
+			return
+		}
 		guard let layer = previewHolder.layer else { return }
 		let devicePoint = layer.captureDevicePointConverted(fromLayerPoint: point)
 		viewModel.focusAtDevicePoint(devicePoint)

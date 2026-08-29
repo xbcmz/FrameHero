@@ -67,6 +67,10 @@ struct CameraPreviewSection: View {
 				)
 				.frame(width: composition.width, height: composition.height)
 				.position(x: composition.midX, y: composition.midY)
+				// 会话进入/退出过渡：浮现与收缩（Doka 式"魔法感"）
+				.opacity(coachPhase == .idle ? 0 : 1)
+				.scaleEffect(coachPhase == .idle ? 0.94 : 1.0, anchor: .top)
+				.animation(.spring(response: 0.35, dampingFraction: 0.8), value: coachPhase)
 			}
 			.onAppear {
 				onCompositionRectUpdate(composition)

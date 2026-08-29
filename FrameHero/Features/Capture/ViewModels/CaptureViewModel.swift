@@ -62,6 +62,10 @@ final class CaptureViewModel: ObservableObject {
 	@Published private(set) var coachSuggestion: String = ""
 	/// 实时引导结果（供 UI 显示，前置摄像头已做镜像校正）
 	@Published private(set) var coachGuidance: GuidanceResult?
+	/// 自动拍摄倒计时（remain/total 秒）；nil = 不在倒计时
+	@Published private(set) var autoCaptureCountdown: (remain: Double, total: Double)?
+	/// 场景推荐焦段（变焦盘上高亮提示），nil = 无推荐
+	@Published private(set) var sceneRecommendedFactor: CGFloat?
 
 	/// 会话是否激活（帧分析的总开关）
 	private var isCoachActive = false
@@ -132,6 +136,16 @@ final class CaptureViewModel: ObservableObject {
 	private static let ciContext = CIContext()
 	private var cancellables: Set<AnyCancellable> = []
 	private var autoCaptureWorkItem: DispatchWorkItem?
+	/// 自动拍摄倒计时定时器（主线程 20Hz tick）
+	private var countdownTimer: DispatchSourceTimer?
+	private var countdownDeadline: Date?
+
+	// MARK: - chip 防抖（B5）
+	/// 上次 chip 文案变更时间
+	private var lastSuggestionChange = Date.distantPast
+	/// 被防抖延迟的最新意图
+	private var pendingSuggestion: String?
+	private var suggestionDebounceWork: DispatchWorkItem?
 
 	/// 单帧分析在途标志（10fps 节流 + 防抖，会话期间持续运行）
 	private var isFrameAnalysisInFlight = false
@@ -193,7 +207,8 @@ final class CaptureViewModel: ObservableObject {
 	}
 
 	func onDisappear() {
-		autoCaptureWorkItem?.cancel()
+		cancelAutoCapture()
+		suggestionDebounceWork?.cancel()
 		motion.stop()
 		camera.stopSession()
 	}
@@ -242,8 +257,12 @@ final class CaptureViewModel: ObservableObject {
 		currentComposition = nil
 		photographyAnalysis = nil
 		coachSuggestion = "正在分析场景"
+		lastSuggestionChange = Date()
+		pendingSuggestion = nil
+		suggestionDebounceWork?.cancel()
 		coachPhase = .analyzing
 		isCoachActive = true
+		sceneRecommendedFactor = nil
 		// 标记待分析帧：下一帧到达立即分析，不等节流窗口
 		pendingFrameForAnalysis = true
 	}
@@ -253,6 +272,7 @@ final class CaptureViewModel: ObservableObject {
 		isCoachActive = false
 		coachPhase = .idle
 		coachGuidance = nil
+		sceneRecommendedFactor = nil
 		cancelAutoCapture()
 	}
 
@@ -418,6 +438,13 @@ final class CaptureViewModel: ObservableObject {
 				guard now.timeIntervalSince(self.lastMotionUIUpdate) >= 0.2 else { return }
 				self.lastMotionUIUpdate = now
 				self.motionIsStable = stable
+
+				// 倒计时中手抖了：取消拍摄并明确告知，比拍糊再删好
+				if !stable, self.autoCaptureCountdown != nil {
+					self.cancelAutoCapture()
+					if self.coachPhase == .achieved { self.coachPhase = .guiding }
+					self.publishSuggestion("手抖了，稳住重新构图")
+				}
 			}
 			.store(in: &cancellables)
 	}
@@ -567,8 +594,30 @@ final class CaptureViewModel: ObservableObject {
 		currentScene = scene
 		coachSceneLabel = scene.displayName.isEmpty ? nil : scene.displayName
 
+		// 场景宣告：具体场景（非通用）识别成功给一次选择反馈
+		if scene != .generic {
+			HapticManager.shared.selection()
+		}
+
 		// 场景 → 相机参数预设：只改写 aiAuto 状态的参数（用户手动/锁定的不覆盖）
-		applyAICameraStrategy(scenePreset(for: scene))
+		let preset = scenePreset(for: scene)
+		applyAICameraStrategy(preset)
+		syncSceneRecommendedLens(preset)
+	}
+
+	/// 场景推荐镜头 → 变焦盘高亮提示（与当前倍率差距明显才提示）
+	private func syncSceneRecommendedLens(_ preset: CameraStrategySuggestion) {
+		var target: CameraManager.ZoomPreset?
+		switch preset.lensPreference {
+		case .ultraWide: target = zoomPresets.first { $0.lens == .ultraWide }
+		case .telephoto: target = zoomPresets.first { $0.lens == .telephoto }
+		default: target = nil
+		}
+		if let target, abs(target.zoomFactor - zoomState.currentFactor) > 0.3 {
+			sceneRecommendedFactor = target.zoomFactor
+		} else {
+			sceneRecommendedFactor = nil
+		}
 	}
 
 	/// 场景 → 参数预设（语义偏好，经三态控制过滤后生效）
@@ -637,12 +686,13 @@ final class CaptureViewModel: ObservableObject {
 		// 阶段迁移
 		switch coachPhase {
 		case .analyzing:
-			// 第一份分析到达即进入引导
+			// 第一份分析到达即进入引导（首条文案免防抖直达）
 			coachSuggestion = chipText(for: result, guidance: coachGuidance)
+			lastSuggestionChange = Date()
 			coachPhase = .guiding
 
 		case .guiding, .achieved:
-			coachSuggestion = chipText(for: result, guidance: coachGuidance)
+			publishSuggestion(chipText(for: result, guidance: coachGuidance))
 
 			if coachGuidance?.state == .optimal {
 				if coachPhase != .achieved {
@@ -657,6 +707,42 @@ final class CaptureViewModel: ObservableObject {
 
 		case .idle:
 			break
+		}
+	}
+
+	/// chip 文案发布（防抖）：相同文案不发布；
+	/// 最小驻留 400ms；反向指令（左↔右/近↔远/高↔低）冷却 600ms，
+	/// 未到期时保留最新意图延迟补发
+	private func publishSuggestion(_ text: String) {
+		guard text != coachSuggestion else { return }
+		let now = Date()
+		let elapsed = now.timeIntervalSince(lastSuggestionChange)
+		let required: TimeInterval = Self.isOppositeSuggestion(text, coachSuggestion) ? 0.6 : 0.4
+
+		guard elapsed >= required else {
+			pendingSuggestion = text
+			suggestionDebounceWork?.cancel()
+			let work = DispatchWorkItem { [weak self] in
+				guard let self, let pending = self.pendingSuggestion else { return }
+				self.pendingSuggestion = nil
+				self.publishSuggestion(pending)
+			}
+			suggestionDebounceWork = work
+			DispatchQueue.main.asyncAfter(deadline: .now() + (required - elapsed), execute: work)
+			return
+		}
+
+		pendingSuggestion = nil
+		suggestionDebounceWork?.cancel()
+		coachSuggestion = text
+		lastSuggestionChange = now
+	}
+
+	/// 判断两条指令是否互为反向
+	private static func isOppositeSuggestion(_ a: String, _ b: String) -> Bool {
+		let pairs = [("向左", "向右"), ("靠近", "退远"), ("举高", "放低")]
+		return pairs.contains { pair in
+			(a.contains(pair.0) && b.contains(pair.1)) || (a.contains(pair.1) && b.contains(pair.0))
 		}
 	}
 
@@ -678,24 +764,26 @@ final class CaptureViewModel: ObservableObject {
 		return currentScene?.defaultInstruction ?? SceneClassifier.SceneKind.generic.defaultInstruction
 	}
 
-	/// 方向 → 口语化指令（优先级：远近 > 水平 > 垂直）
+	/// 方向 → 复合口语化指令（距离/水平/垂直可叠加）
 	private func directionText(for guidance: GuidanceResult) -> String {
+		var parts: [String] = []
 		switch guidance.distanceDirection {
-		case .moveCloser: return "再靠近一点，主体更饱满"
-		case .moveFarther: return "退远一点，给主体留出空间"
+		case .moveCloser: parts.append("再靠近一点")
+		case .moveFarther: parts.append("退远一点")
 		default: break
 		}
 		switch guidance.horizontalDirection {
-		case .moveLeft: return isFrontCamera ? "向右移一点，人物靠三分线" : "向左移一点，人物靠三分线"
-		case .moveRight: return isFrontCamera ? "向左移一点，人物靠三分线" : "向右移一点，人物靠三分线"
+		case .moveLeft: parts.append(isFrontCamera ? "向右移一点" : "向左移一点")
+		case .moveRight: parts.append(isFrontCamera ? "向左移一点" : "向右移一点")
 		default: break
 		}
 		switch guidance.verticalDirection {
-		case .moveUp: return "举高一点"
-		case .moveDown: return "放低一点"
+		case .moveUp: parts.append("举高一点")
+		case .moveDown: parts.append("放低一点")
 		default: break
 		}
-		return "保持稳定，微调构图"
+		if parts.isEmpty { return "保持稳定，微调构图" }
+		return parts.joined(separator: "，")
 	}
 
 	/// 从构图分析结果构建引导引擎输入
@@ -720,20 +808,51 @@ final class CaptureViewModel: ObservableObject {
 
 	private func scheduleAutoCaptureIfEnabled() {
 		guard isAutoCaptureEnabled else { return }
-		autoCaptureWorkItem?.cancel()
+		cancelAutoCapture()
 
-		let work = DispatchWorkItem { [weak self] in
-			guard let self, self.coachPhase == .achieved else { return }
+		let total = max(0.5, captureDelay)
+		countdownDeadline = Date().addingTimeInterval(total)
+		autoCaptureCountdown = (remain: total, total: total)
+		let totalSteps = Int(ceil(total))
+		var lastStep = totalSteps
+
+		let timer = DispatchSource.makeTimerSource(queue: .main)
+		timer.schedule(deadline: .now(), repeating: 0.05)
+		timer.setEventHandler { [weak self] in
+			guard let self, let deadline = self.countdownDeadline else { return }
+			let remain = deadline.timeIntervalSinceNow
+			self.autoCaptureCountdown = (remain: max(0, remain), total: total)
+
+			// 每秒一步的倒计时震动（渐强）
+			let step = Int(ceil(max(0, remain)))
+			if step != lastStep {
+				lastStep = step
+				if step > 0 {
+					HapticManager.shared.countdown(step: totalSteps - step + 1, total: totalSteps)
+				}
+			}
+
+			guard remain <= 0 else { return }
+			self.autoCaptureCountdown = nil
+			self.countdownTimer?.cancel()
+			self.countdownTimer = nil
+
+			// 触发瞬间会话可能已被打断（切镜头/退出/失稳取消）
+			guard self.coachPhase == .achieved else { return }
 			self.onCaptureTriggered?()
 			DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
 				self.capturePhoto()
 			}
 		}
-		autoCaptureWorkItem = work
-		DispatchQueue.main.asyncAfter(deadline: .now() + captureDelay, execute: work)
+		countdownTimer = timer
+		timer.resume()
 	}
 
 	private func cancelAutoCapture() {
+		countdownTimer?.cancel()
+		countdownTimer = nil
+		countdownDeadline = nil
+		autoCaptureCountdown = nil
 		autoCaptureWorkItem?.cancel()
 		autoCaptureWorkItem = nil
 	}
