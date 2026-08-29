@@ -1,8 +1,8 @@
-# LiveCapture - AI Photography Assistant
+# FrameHero 构图侠 - AI Photography Assistant
 
 English | [简体中文](README_CN.md)
 
-LiveCapture is an iOS AI photography assistant that combines real-time composition analysis with intelligent camera control. It analyzes the live preview, provides composition guidance, and automatically adjusts camera parameters (exposure, focus, white balance, lens selection) based on the scene — letting AI handle the technical details so you can focus on framing the shot.
+FrameHero is an iOS AI photography assistant that combines real-time composition analysis with intelligent camera control. It analyzes the live preview, provides composition guidance, and automatically adjusts camera parameters (exposure, focus, white balance, lens selection) based on the scene — letting AI handle the technical details so you can focus on framing the shot.
 
 Based on the [LiveCompose](https://github.com/LiveCompose) open-source project, with significant architecture upgrades for professional camera control.
 
@@ -55,20 +55,20 @@ Every camera parameter has an independent three-state control:
 ### 1. Install
 
 ```bash
-git clone https://github.com/xbcmz/LiveCapture.git
-cd LiveCapture
-open LiveCapture.xcodeproj
+git clone https://github.com/xbcmz/FrameHero.git
+cd FrameHero
+open FrameHero.xcodeproj
 ```
 
 ### 2. Configure (Optional)
 
-Add your DeepSeek API Key in Xcode to enable cloud AI:
+Enable cloud AI advice (DeepSeek) in-app:
 
-1. Open `Info.plist`
-2. Add a new row with key `DeepSeekAPIKey`, type String
-3. Paste your DeepSeek API Key
+1. Run the app, go to **Settings → AI Assistant**
+2. Toggle on **Cloud AI Advice**, paste your DeepSeek API Key and save (stored in the system Keychain, never written to plain files)
+3. Tap **Test Connection** to verify; choose between the V3 chat model and the R1 reasoning model
 
-> No API Key? No problem — the app automatically falls back to the local rule engine + Mock AI. Core composition features work fully offline.
+> No API Key? No problem — the app automatically falls back to the local rule engine + built-in mock advice. Core composition features work fully offline.
 
 ### 3. Run
 
@@ -100,7 +100,7 @@ Each panel has three buttons at the top to switch AI Auto / Manual / Locked mode
 
 ### AI Advice Card
 
-When Magic Wand is on, an AI advice card appears at the bottom with:
+Enable **AI Advice While Shooting** in **Settings → AI Assistant**, and an advice card appears at the top with:
 
 - **Composition advice** — current composition score and improvement suggestions
 - **AI Camera Parameters** — AI-recommended lens, focus, white balance, and depth settings
@@ -143,13 +143,15 @@ Camera Frame (60fps)
 ### Directory Structure
 
 ```
-LiveCapture/
-├── LiveCaptureApp.swift                  # App entry
+FrameHero/
+├── FrameHeroApp.swift                  # App entry
 ├── Info.plist                             # Permissions & config
 ├── Assets.xcassets/                       # App icon & logo
 ├── Core/
 │   ├── AI/                                # AI service layer
-│   │   ├── APIKeyProvider.swift           # Secure API key reading
+│   │   ├── AIConfigurationStore.swift     # AI config hub (settings data source)
+│   │   ├── KeychainStore.swift            # Keychain wrapper (API key storage)
+│   │   ├── APIKeyProvider.swift           # API key reading (Keychain first)
 │   │   ├── DeepSeekService.swift          # Cloud AI (DeepSeek API)
 │   │   ├── MockPhotographer.swift         # Offline mock AI
 │   │   ├── AIAdviceProvider.swift         # AI advice orchestration
@@ -202,17 +204,16 @@ LiveCapture/
 │   │       ├── DebugPanel.swift               # Debug info
 │   │       ├── TopControlBar.swift            # Top control bar
 │   │       └── UserGuidanceView.swift         # Guidance text
-│   ├── Home/                             # Photo gallery
-│   │   ├── Views/HomeView.swift          # Grid gallery
+│   ├── Home/                             # Home workbench + gallery
+│   │   ├── Views/HomeView.swift          # Home (workbench: status/recents/stats)
+│   │   ├── Views/GalleryView.swift       # Photo grid
 │   │   ├── Views/PhotoDetailView.swift   # Full-screen browser
 │   │   ├── ViewModels/HomeViewModel.swift
 │   │   └── Components/PhotoCard.swift
 │   ├── Settings/
-│   │   └── Views/SettingsView.swift      # Settings page
+│   │   └── Views/SettingsView.swift      # Settings page (incl. AI assistant)
 │   ├── ShareCard/
-│   │   └── ShareCardGenerator.swift      # Share card (1080×1440)
-│   └── LiveCompose/
-│       └── Views/LiveComposeView.swift   # About page
+│   │   └── ShareCardGenerator.swift      # Share card (1080×1440, watermark-free)
 ├── UI/
 │   ├── Design/DesignSystem.swift         # Design tokens
 │   └── Components/
@@ -221,7 +222,7 @@ LiveCapture/
 │       ├── ExposureControlView.swift     # EV slider + 3-state toggle
 │       ├── FocusControlView.swift        # Focus slider + 3-state toggle
 │       ├── WhiteBalanceControlView.swift # Color temp slider + 3-state
-│       └── ZoomRingView.swift            # Zoom preset ring
+│       └── ZoomDialView.swift            # Zoom dial (presets + long-press fine dial)
 └── Utilities/
     └── Helpers/
         ├── HapticManager.swift           # Haptic feedback
@@ -231,11 +232,11 @@ LiveCapture/
 ### Navigation
 
 ```
-MainTabView (TabView, 4 Tabs)
-├── Tab 1 "LiveCompose"  → LiveComposeView        # About / branding
-├── Tab 2 "Gallery"      → HomeView                # Photo grid → detail
-├── Tab 3 "Capture"      → CaptureView (fullScreen) # Camera + AI guidance
-└── Tab 4 "Settings"     → SettingsView             # Preferences
+MainTabView (TabView, 4 Tabs + AppRouter)
+├── Tab 1 "Home"      → HomeView                   # AI photography workbench
+├── Tab 2 "Gallery"   → GalleryView                # Photo grid → browser / export
+├── Tab 3 "Capture"   → CaptureView (fullScreen)   # Camera + AI guidance
+└── Tab 4 "Settings"  → SettingsView               # AI assistant / capture prefs
 ```
 
 ### Camera Control Architecture
@@ -357,7 +358,7 @@ A: Auto-capture requires both conditions to be met:
 3. Auto-capture is enabled in Settings
 
 ### Q: How do I switch detection engines?
-A: Go to **Settings → Engine**. CoreML engine is more accurate but slightly slower; Vision engine is faster but only detects faces/bodies/saliency regions.
+A: Go to **Settings → Composition Engine**. CoreML engine is more accurate but slightly slower; Vision engine is faster but only detects faces/bodies/saliency regions.
 
 ### Q: Where are photos stored?
 A: Photos are saved in the app's Application Support directory and are not automatically added to the system photo library. You can manually save to album from the detail view, or generate a share card.
@@ -375,7 +376,7 @@ A: Currently the UI is primarily in Chinese. The architecture supports internati
 - [x] **Phase 5** — Cloud AI strategy integration (DeepSeek)
 - [ ] **Phase 6** — Low-light detection + night mode
 - [ ] **Phase 7** — HDR / exposure bracketing
-- [ ] **Phase 8** — Pro mode control panel UI redesign
+- [x] **Phase 8** — Pro mode control panel UI redesign (collapsible column + zoom dial)
 - [ ] **Phase 9** — Shooting presets (portrait/landscape/food one-tap presets)
 
 ## Contributing
@@ -405,6 +406,8 @@ Contributions are welcome! Here's how to get involved:
 MIT License — see [LICENSE](LICENSE) for details.
 
 ## Acknowledgments
+
+Formerly named LiveCapture, now renamed **FrameHero 构图侠**.
 
 Based on the [LiveCompose](https://github.com/LiveCompose) open-source project. Original composition detection models (AdaCrop student/teacher) and motion tracking system are used with modifications.
 

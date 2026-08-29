@@ -1,8 +1,8 @@
-# LiveCapture - AI 摄影助手
+# 构图侠 FrameHero - AI 构图相机
 
 [English](README.md) | 简体中文
 
-LiveCapture 是一款 iOS AI 摄影助手，结合实时构图分析与智能相机控制。它分析取景画面、提供构图引导，并根据场景自动调节相机参数（曝光、对焦、白平衡、镜头选择）——让 AI 处理技术细节，你只需专注于构图。
+FrameHero 是一款 iOS AI 摄影助手，结合实时构图分析与智能相机控制。它分析取景画面、提供构图引导，并根据场景自动调节相机参数（曝光、对焦、白平衡、镜头选择）——让 AI 处理技术细节，你只需专注于构图。
 
 基于 [LiveCompose](https://github.com/LiveCompose) 开源项目二次开发，新增了专业级相机控制架构。
 
@@ -55,20 +55,20 @@ LiveCapture 是一款 iOS AI 摄影助手，结合实时构图分析与智能相
 ### 1. 安装
 
 ```bash
-git clone https://github.com/xbcmz/LiveCapture.git
-cd LiveCapture
-open LiveCapture.xcodeproj
+git clone https://github.com/xbcmz/FrameHero.git
+cd FrameHero
+open FrameHero.xcodeproj
 ```
 
 ### 2. 配置（可选）
 
-在 Xcode 中配置 DeepSeek API Key 以启用云端 AI：
+启用云端 AI 建议（DeepSeek）：
 
-1. 打开 `Info.plist`
-2. 添加一行 `DeepSeekAPIKey`，类型为 String
-3. 填入你的 DeepSeek API Key
+1. 运行 App，进入「设置 → AI 助手」
+2. 打开「云端 AI 建议」开关，粘贴 DeepSeek API Key 并保存（存储在系统 Keychain，不明文落盘）
+3. 点「开始测试」验证连通性；模型可选通用 V3 / 深度思考 R1
 
-> 没有 API Key 也没关系，App 会自动降级到本地规则引擎 + Mock AI，核心构图功能不受影响。
+> 没有 API Key 也没关系，App 会自动降级到本地规则引擎 + 本地模拟建议，核心构图功能不受影响。
 
 ### 3. 运行
 
@@ -100,7 +100,7 @@ open LiveCapture.xcodeproj
 
 ### AI 建议卡片
 
-开启魔法棒后，屏幕底部会出现 AI 建议卡片，包含：
+在「设置 → AI 助手」开启「拍摄时给出 AI 建议」后，屏幕顶部会出现 AI 建议卡片，包含：
 
 - **构图建议** — 当前画面的构图评分和改进建议
 - **AI 相机参数** — AI 当前推荐的镜头、对焦、白平衡、景深设置
@@ -143,13 +143,15 @@ open LiveCapture.xcodeproj
 ### 目录结构
 
 ```
-LiveCapture/
-├── LiveCaptureApp.swift                  # App 入口
+FrameHero/
+├── FrameHeroApp.swift                  # App 入口
 ├── Info.plist                             # 权限与配置
 ├── Assets.xcassets/                       # App 图标与 Logo
 ├── Core/
 │   ├── AI/                                # AI 服务层
-│   │   ├── APIKeyProvider.swift           # 安全读取 API Key
+│   │   ├── AIConfigurationStore.swift     # AI 配置中心（设置页数据源）
+│   │   ├── KeychainStore.swift            # Keychain 封装（API Key 存储）
+│   │   ├── APIKeyProvider.swift           # API Key 读取（Keychain 优先）
 │   │   ├── DeepSeekService.swift          # 云端 AI（DeepSeek API）
 │   │   ├── MockPhotographer.swift         # 离线 Mock AI
 │   │   ├── AIAdviceProvider.swift         # AI 建议编排
@@ -190,7 +192,7 @@ LiveCapture/
 │       └── teacher/                      # 专业模式（完整精度）
 ├── Features/
 │   ├── Main/
-│   │   └── MainTabView.swift              # TabBar 根视图（4 Tab）
+│   │   └── MainTabView.swift              # TabBar 根视图（4 Tab）+ AppRouter
 │   ├── Capture/                           # 核心拍摄功能
 │   │   ├── Views/CaptureView.swift       # 拍摄主界面
 │   │   ├── ViewModels/CaptureViewModel.swift  # 流水线状态机
@@ -202,17 +204,16 @@ LiveCapture/
 │   │       ├── DebugPanel.swift               # 调试信息
 │   │       ├── TopControlBar.swift            # 顶部控制栏
 │   │       └── UserGuidanceView.swift         # 引导文字
-│   ├── Home/                             # 照片图库
-│   │   ├── Views/HomeView.swift          # 网格图库
+│   ├── Home/                             # 首页工作台 + 图库
+│   │   ├── Views/HomeView.swift          # 首页（工作台：状态/最近拍摄/数据）
+│   │   ├── Views/GalleryView.swift       # 照片网格
 │   │   ├── Views/PhotoDetailView.swift   # 全屏浏览
 │   │   ├── ViewModels/HomeViewModel.swift
 │   │   └── Components/PhotoCard.swift
 │   ├── Settings/
-│   │   └── Views/SettingsView.swift      # 设置页
+│   │   └── Views/SettingsView.swift      # 设置页（含 AI 助手配置）
 │   ├── ShareCard/
-│   │   └── ShareCardGenerator.swift      # 分享卡片（1080×1440）
-│   └── LiveCompose/
-│       └── Views/LiveComposeView.swift   # 关于页
+│   │   └── ShareCardGenerator.swift      # 分享卡片（1080×1440，无水印）
 ├── UI/
 │   ├── Design/DesignSystem.swift         # 设计 Token
 │   └── Components/
@@ -221,7 +222,7 @@ LiveCapture/
 │       ├── ExposureControlView.swift     # EV 滑块 + 三态切换
 │       ├── FocusControlView.swift        # 对焦滑块 + 三态切换
 │       ├── WhiteBalanceControlView.swift # 色温滑块 + 三态切换
-│       └── ZoomRingView.swift            # 变焦预设环
+│       └── ZoomDialView.swift            # 变焦盘（胶囊焦段 + 长按细分盘）
 └── Utilities/
     └── Helpers/
         ├── HapticManager.swift           # 触觉反馈
@@ -231,11 +232,11 @@ LiveCapture/
 ### 导航
 
 ```
-MainTabView (TabView, 4 Tab)
-├── Tab 1 "LiveCompose"  → LiveComposeView        # 关于 / 品牌
-├── Tab 2 "图库"          → HomeView                # 照片网格 → 详情
-├── Tab 3 "拍摄"          → CaptureView (全屏)       # 相机 + AI 引导
-└── Tab 4 "设置"          → SettingsView             # 偏好设置
+MainTabView (TabView, 4 Tab + AppRouter)
+├── Tab 1 "首页"  → HomeView                   # AI 摄影工作台
+├── Tab 2 "图库"  → GalleryView                # 照片网格 → 浏览 / 导出
+├── Tab 3 "拍摄"  → CaptureView (全屏)          # 相机 + AI 引导
+└── Tab 4 "设置"  → SettingsView               # AI 助手 / 拍摄偏好
 ```
 
 ### 相机控制架构
@@ -357,7 +358,7 @@ A: 自动拍摄需要同时满足两个条件：
 3. 已在设置中开启自动拍摄
 
 ### Q: 怎么换检测引擎？
-A: 在「设置 → 引擎」中切换。CoreML 引擎精度更高但稍慢，Vision 引擎更快但只检测人脸/人体/显著性区域。
+A: 在「设置 → 构图引擎」中切换。CoreML 引擎精度更高但稍慢，Vision 引擎更快但只检测人脸/人体/显著性区域。
 
 ### Q: 照片存在哪里？
 A: 照片保存在 App 的 Application Support 目录中，不会自动存入系统相册。你可以在详情页手动保存到相册，或生成分享卡片。
@@ -375,7 +376,7 @@ A: 当前 UI 主要为中文。架构支持国际化，欢迎提交 PR 增加其
 - [x] **Phase 5** — 云端 AI 策略集成（DeepSeek）
 - [ ] **Phase 6** — 低光检测 + 夜景模式
 - [ ] **Phase 7** — HDR / 曝光包围
-- [ ] **Phase 8** — 专业模式控制面板 UI 重构
+- [x] **Phase 8** — 专业模式控制面板 UI 重构（右侧折叠面板 + 变焦盘）
 - [ ] **Phase 9** — 拍摄参数预设（人像/风景/美食等一键预设）
 
 ## 贡献指南
@@ -405,6 +406,8 @@ A: 当前 UI 主要为中文。架构支持国际化，欢迎提交 PR 增加其
 MIT License — 详见 [LICENSE](LICENSE)。
 
 ## 致谢
+
+项目原名 LiveCapture，现更名 **构图侠 FrameHero**。
 
 基于 [LiveCompose](https://github.com/LiveCompose) 开源项目。原始的构图检测模型（AdaCrop student/teacher）和运动追踪系统在使用时做了修改。
 
