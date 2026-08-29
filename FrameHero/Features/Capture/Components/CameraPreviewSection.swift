@@ -38,6 +38,8 @@ struct CameraPreviewSection: View {
 	let coachSceneLabel: String?
 	let coachSuggestion: String
 	let coachGuidance: GuidanceResult?
+	let coachMarkerPoint: CGPoint?
+	let coachAligned: Bool
 
 	var body: some View {
 		GeometryReader { previewGeo in
@@ -63,6 +65,8 @@ struct CameraPreviewSection: View {
 					sceneLabel: coachSceneLabel,
 					suggestion: coachSuggestion,
 					guidance: coachGuidance,
+					markerPoint: coachMarkerPoint,
+					isAligned: coachAligned,
 					compositionRect: composition
 				)
 				.frame(width: composition.width, height: composition.height)

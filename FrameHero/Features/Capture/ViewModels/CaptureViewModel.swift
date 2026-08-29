@@ -72,6 +72,16 @@ final class CaptureViewModel: ObservableObject {
 	/// 当前稳定场景
 	private var currentScene: SceneClassifier.SceneKind?
 
+	// MARK: - 目标锁定（治"左右乱指"）
+	// 旧逻辑每帧取"最近三分线"作目标：主体在画面中央时到左右三分线等距，
+	// 检测抖动会让目标左右翻转，chip 就永远在"向左/向右"之间横跳。
+	// 现在主体首次稳定出现时锁定目标，整个会话不变；
+	// 主体丢失超 1.5s 才解锁，重新出现时按朝向重新选择。
+	/// 锁定的目标点（归一化图像坐标，y 向上）
+	private var lockedTargetPoint: CGPoint?
+	/// 主体从画面消失的时刻（用于解锁目标）
+	private var subjectLostSince: Date?
+
 	// MARK: - Published State
 
 	@Published private(set) var compositionRectInView: CGRect = .zero
@@ -251,6 +261,8 @@ final class CaptureViewModel: ObservableObject {
 		HapticManager.shared.light()
 		sceneClassifier.reset()
 		currentScene = nil
+		lockedTargetPoint = nil
+		subjectLostSince = nil
 		coachSceneLabel = nil
 		coachGuidance = nil
 		compositionTarget = nil
@@ -270,6 +282,8 @@ final class CaptureViewModel: ObservableObject {
 	func stopAIComposition() {
 		HapticManager.shared.light()
 		isCoachActive = false
+		lockedTargetPoint = nil
+		subjectLostSince = nil
 		coachPhase = .idle
 		coachGuidance = nil
 		sceneRecommendedFactor = nil
@@ -398,6 +412,8 @@ final class CaptureViewModel: ObservableObject {
 		if isCoachActive {
 			sceneClassifier.reset()
 			currentScene = nil
+			lockedTargetPoint = nil
+			subjectLostSince = nil
 			coachSceneLabel = nil
 			compositionTarget = nil
 			currentComposition = nil
@@ -670,17 +686,43 @@ final class CaptureViewModel: ObservableObject {
 	/// 消费一次构图分析结果：更新目标、计算引导、迁移会话阶段
 	private func ingestAnalysis(_ result: PhotographyAnalysisResult) {
 		photographyAnalysis = result
-		compositionTarget = result.target
-		currentComposition = makeCurrentComposition(from: result.composition)
 
-		// 计算实时引导（视图尺寸就绪才有意义）
-		if compositionRectInView.width > 0 {
-			let guidance = guidanceEngine.compute(
-				current: currentComposition!,
-				target: compositionTarget!,
-				viewSize: compositionRectInView.size
-			)
-			coachGuidance = guidance
+		let person = result.composition.person
+		var effectiveTarget = result.target
+
+		if person.detected {
+			// 主体在场：首次稳定出现时锁定目标，会话内不再漂移
+			subjectLostSince = nil
+			if lockedTargetPoint == nil {
+				lockedTargetPoint = CGPoint(
+					x: lockedTargetX(for: person),
+					y: effectiveTarget.targetCenterY
+				)
+				guidanceEngine.reset()
+			}
+			effectiveTarget.targetCenterX = lockedTargetPoint!.x
+			effectiveTarget.targetCenterY = lockedTargetPoint!.y
+			compositionTarget = effectiveTarget
+			currentComposition = makeCurrentComposition(from: result.composition)
+
+			// 有主体才计算位置引导
+			if compositionRectInView.width > 0 {
+				coachGuidance = guidanceEngine.compute(
+					current: currentComposition!,
+					target: effectiveTarget,
+					viewSize: compositionRectInView.size
+				)
+			}
+		} else {
+			// 无主体：不产出位置引导（避免对空目标乱指），chip 走场景静态建议
+			compositionTarget = nil
+			currentComposition = nil
+			coachGuidance = nil
+			if subjectLostSince == nil { subjectLostSince = Date() }
+			if let lost = subjectLostSince,
+			   Date().timeIntervalSince(lost) > 1.5 {
+				lockedTargetPoint = nil
+			}
 		}
 
 		// 阶段迁移
@@ -746,6 +788,30 @@ final class CaptureViewModel: ObservableObject {
 		}
 	}
 
+	/// 锁定目标点的 X 选择规则（构图标准）：
+	/// 1. 前视空间优先——脸朝右 → 人放左三分点，给视线留白；脸朝左反之
+	/// 2. 无明确朝向 → 取最近三分点（减少用户移动量）
+	/// 3. 主体居中（左右等距）→ 固定取右三分点（确定性，避免等距翻转）
+	private func lockedTargetX(for person: PersonInfo) -> CGFloat {
+		let left = 1.0 / 3.0
+		let right = 2.0 / 3.0
+
+		if let faceX = person.faceCenterX {
+			let facing = faceX - person.centerX
+			if facing > 0.015 { return left }
+			if facing < -0.015 { return right }
+		}
+		if abs(person.centerX - 0.5) < 0.05 { return right }
+		return abs(person.centerX - left) <= abs(person.centerX - right) ? left : right
+	}
+
+	/// 供 UI 显示的目标标记点（视图坐标；前置预览是镜像的，X 需翻转）
+	var displayTargetMarkerPoint: CGPoint? {
+		guard let point = coachGuidance?.targetPointInView else { return nil }
+		guard isFrontCamera else { return point }
+		return CGPoint(x: compositionRectInView.width - point.x, y: point.y)
+	}
+
 	/// 一行建议指令（chip 文案）：有主体按引导方向说，没主体按场景说
 	private func chipText(for result: PhotographyAnalysisResult, guidance: GuidanceResult?) -> String {
 		if let guidance {
@@ -753,7 +819,7 @@ final class CaptureViewModel: ObservableObject {
 			case .optimal:
 				return isAutoCaptureEnabled ? "构图完成，即将拍摄" : "构图完成，可以拍了"
 			case .nearlyOptimal:
-				return "接近最佳构图，再微调一下"
+				return "把人物对准标记圈，就差一点"
 			case .adjusting:
 				return directionText(for: guidance)
 			}

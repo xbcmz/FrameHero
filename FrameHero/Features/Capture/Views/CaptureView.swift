@@ -65,7 +65,9 @@ struct CaptureView: View {
 					coachPhase: viewModel.coachPhase,
 					coachSceneLabel: viewModel.coachSceneLabel,
 					coachSuggestion: viewModel.coachSuggestion,
-					coachGuidance: viewModel.displayGuidance
+					coachGuidance: viewModel.displayGuidance,
+					coachMarkerPoint: viewModel.displayTargetMarkerPoint,
+					coachAligned: viewModel.coachGuidance?.isAligned ?? false
 				)
 				.frame(width: geo.size.width, height: geo.size.height)
 				.scaleEffect(captureAnimationScale)

@@ -26,6 +26,10 @@ struct CompositionCoachOverlayView: View {
     let suggestion: String
     /// 实时引导结果（驱动状态图标，已做前置镜像校正）
     let guidance: GuidanceResult?
+    /// 目标标记点（构图区域视图坐标，前置已镜像校正）；nil = 不显示
+    let markerPoint: CGPoint?
+    /// 主体是否已对准目标（标记圈变绿）
+    let isAligned: Bool
     /// 3:4 构图区域（线与 chip 都画在这个区域内）
     let compositionRect: CGRect
 
@@ -39,6 +43,12 @@ struct CompositionCoachOverlayView: View {
                 thirdsGrid
                     .opacity(phase == .achieved ? 0.35 : 1.0)
                     .animation(.spring(response: 0.5, dampingFraction: 0.85), value: phase)
+            }
+
+            // 目标标记圈：AI 选定的构图位置，把主体放进去即变绿（最终指示）
+            if let markerPoint {
+                targetMarker
+                    .position(markerPoint)
             }
 
             // 顶部集群：状态图标 + 建议 chip。
@@ -95,6 +105,28 @@ struct CompositionCoachOverlayView: View {
             context.stroke(path, with: .color(.white.opacity(alpha)), lineWidth: 1)
         }
         .allowsHitTesting(false)
+    }
+
+    // MARK: - 目标标记圈
+
+    private var targetMarker: some View {
+        let reached = isAligned || phase == .achieved
+        let color = reached ? Color.green : Color.white
+        let size: CGFloat = reached ? 76 : 88
+
+        return ZStack {
+            Circle()
+                .stroke(
+                    color.opacity(reached ? 0.95 : 0.7),
+                    style: StrokeStyle(lineWidth: 1.5, dash: [5, 4])
+                )
+                .frame(width: size, height: size)
+            Circle()
+                .fill(color.opacity(0.9))
+                .frame(width: 4, height: 4)
+        }
+        .shadow(color: .black.opacity(0.4), radius: 2)
+        .animation(.spring(response: 0.4, dampingFraction: 0.8), value: reached)
     }
 
     // MARK: - 状态图标
