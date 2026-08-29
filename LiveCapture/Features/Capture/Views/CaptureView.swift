@@ -328,14 +328,15 @@ struct CaptureView: View {
 		let showZoomRing = span > CGFloat(0.05) || viewModel.zoomPresets.count > 1
 
 		if showZoomRing {
-			// 变焦环 + 流水线开关
+			// 变焦控件 + 流水线开关
+			// 注意：变焦控件必须用 maxWidth: .infinity 明确占满可用宽度——
+			// 若与 Spacer 竞争空间，GeometryReader 会被压缩，
+			// 内部按宽度定位的刻度标签会全部叠在一起
 			HStack(alignment: .center, spacing: 0) {
 				// 左侧占位
 				Spacer()
 					.frame(width: 50)
 
-				// 中间变焦控件（原生风格：点按焦段 / 长按唤出细分变焦盘）
-				Spacer()
 				ZoomDialView(
 					presets: viewModel.zoomPresets,
 					range: viewModel.zoomRange,
@@ -350,8 +351,8 @@ struct CaptureView: View {
 						viewModel.finalizeZoomInteractively(at: factor, smooth: true)
 					}
 				)
-				.padding(.horizontal, 12)
-				Spacer()
+				.frame(maxWidth: .infinity)
+				.padding(.horizontal, 8)
 
 				// 右侧流水线开关按钮
 				pipelineToggleButton

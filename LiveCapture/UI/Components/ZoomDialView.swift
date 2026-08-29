@@ -185,8 +185,18 @@ struct ZoomDialView: View {
             t += 1
         }
 
-        // 远端稀疏标注（近端已有焦段标签）
-        let farLabels: [CGFloat] = [5, 10, 15, 20, 25].filter { $0 <= dialMax }
+        // 远端稀疏标注（近端已有焦段标签）；
+        // 与焦段标签或其他数字距离 <16pt 时跳过，避免窄盘上文字互相压叠
+        let presetXs = sortedPresets.map { xFor($0.zoomFactor, width: width) }
+        var placedXs = presetXs
+        var farLabels: [CGFloat] = []
+        for value in [5.0, 10.0, 15.0, 20.0, 25.0] where CGFloat(value) <= dialMax {
+            let x = xFor(CGFloat(value), width: width)
+            if placedXs.allSatisfy({ abs($0 - x) >= 16 }) {
+                farLabels.append(CGFloat(value))
+                placedXs.append(x)
+            }
+        }
 
         return ZStack {
             RoundedRectangle(cornerRadius: controlHeight / 2, style: .continuous)
@@ -211,13 +221,13 @@ struct ZoomDialView: View {
                     .position(x: xFor(preset.zoomFactor, width: width), y: controlHeight / 2)
             }
 
-            // 远端数字
+            // 远端数字（整数格式，避免 CGFloat 插值渲染成 "5.0" 这种长文本）
             ForEach(farLabels, id: \.self) { value in
-                let isNear = abs(CGFloat(value) - dialFactor) < 0.5
-                Text("\(value)")
+                let isNear = abs(value - dialFactor) < 0.5
+                Text("\(Int(value))")
                     .font(.system(size: isNear ? 19 : 13, weight: .bold, design: .rounded))
                     .foregroundColor(isNear ? .white : .white.opacity(0.55))
-                    .position(x: xFor(CGFloat(value), width: width), y: controlHeight / 2)
+                    .position(x: xFor(value, width: width), y: controlHeight / 2)
             }
 
             // 当前位置指示
