@@ -1,7 +1,14 @@
 # LiveCapture 优化交接文档
 
 > 用途：开新对话时让 AI 先读本文件（说「先读 OPTIMIZATION_HANDOFF.md」即可接上进度）。
-> 更新时间：2026-08-29（第五批完成，项目已更名为 FrameHero（App 名不用中文））。GitHub 已同步（origin: git@github.com:xbcmz/LiveCapture.git，分支 main；仓库待用户手动改名 FrameHero）。
+> 更新时间：2026-08-29（v1.0.0 稳定基线已打 tag）。GitHub 已同步（origin: git@github.com:xbcmz/FrameHero.git，仓库已改名）。
+
+## 版本基线与分支约定
+
+- **稳定基线：tag `v1.0.0`**（2026-08-29）——后续改造基于此版本
+- 分支约定：`main` 保持稳定（每个稳定点打 `v1.x` tag），日常改造在 `dev` 分支进行，稳定后合回 main 并打新 tag
+- 回到基线：`git checkout v1.0.0`（只看）；在 dev 上改坏可 `git reset --hard v1.0.0`（丢弃 dev 未推送改动）或从 main 重新开分支
+- GitHub 仓库已改名 FrameHero，本地 remote 已同步更新
 
 ## 项目位置与验证命令
 
