@@ -274,13 +274,14 @@ extension CameraManager {
     }
 
     /// 根据目标倍率挑选平滑过渡的变焦速率。
+    /// 速率太慢会让"点按焦段"后等近 1 秒才到位，感觉像没点中。
     func optimalRampRate(for factor: CGFloat) -> Float {
         if factor < 1.0 {
-            return 5.0
+            return 12.0
         } else if factor > 3.0 {
-            return 10.0
+            return 20.0
         } else {
-            return 8.0
+            return 15.0
         }
     }
 
