@@ -121,11 +121,12 @@ struct CaptureView: View {
 	@State private var pinchActive = false
 	@State private var captureAnimationScale: CGFloat = 1.0
 	@State private var captureFlashOpacity: Double = 0.0
-	@State private var cameraFlipRotation: Double = 0.0
 	// 点按对焦指示器
 	@State private var focusIndicatorPoint: CGPoint? = nil
 	@State private var focusIndicatorOpacity: Double = 0.0
 	@State private var previewHolder = PreviewLayerHolder()
+	// 右侧专业控制面板：nil = 收起，一次只展开一个
+	@State private var expandedPanel: ProPanel? = nil
 	@Environment(\.dismiss) private var dismiss
 
 	var body: some View {
@@ -161,13 +162,12 @@ struct CaptureView: View {
 				)
 				.frame(width: geo.size.width, height: geo.size.height)
 				.scaleEffect(captureAnimationScale)
-				.rotation3DEffect(
-					.degrees(cameraFlipRotation),
-					axis: (x: 0, y: 1, z: 0),
-					perspective: 0.5
-				)
 				.animation(.spring(response: 0.3, dampingFraction: 0.6), value: captureAnimationScale)
-				.animation(.spring(response: 0.5, dampingFraction: 0.75), value: cameraFlipRotation)
+				// 切换镜头用轻微"眨眼"过渡。
+				// 注意：不要用 3D 旋转做翻转动画——旋转 180° 会把整个预览区
+				// （包括文字/箭头覆盖层）水平镜像且不回位，导致前置文字反着显示
+				.opacity(viewModel.isSwitchingCamera ? 0.2 : 1.0)
+				.animation(.easeInOut(duration: 0.2), value: viewModel.isSwitchingCamera)
 				.ignoresSafeArea()
 				.zIndex(0)
 				.gesture(pinchZoomGesture)
@@ -192,49 +192,42 @@ struct CaptureView: View {
 						.zIndex(0.6)
 				}
 
-				// UI 层
-				HStack(spacing: 0) {
-					VStack(spacing: 0) {
-						topSection
+				// UI 层：全宽单列布局，顶栏/底栏始终贴屏幕左右边缘
+				VStack(spacing: 0) {
+					topSection
 
-						if showDebugInfo {
-							debugPanel
-								.transition(.asymmetric(
-									insertion: .move(edge: .top).combined(with: .opacity).combined(with: .scale(scale: 0.95)),
-									removal: .move(edge: .top).combined(with: .opacity)
-								))
-						}
-						
-						// AI 摄影建议卡片（仅在 AI 建议开启且引导未激活时显示）
-						// 当 AI 引导激活时，引导层已经包含分数和方向建议，不再重复显示卡片
-						if viewModel.isPhotographyAdviceEnabled,
-						   !viewModel.isAIGuidanceActive,
-						   let analysis = viewModel.photographyAnalysis {
-							CompositionAdviceCard(
-								result: analysis,
-								isLoading: viewModel.isPhotographyAnalyzing
-							)
-							.padding(.top, 8)
-							.transition(.opacity.combined(with: .move(edge: .top)))
-						}
-
-						Spacer()
-
-						bottomSection(bottomInset: max(safeInsets.bottom, 16))
-							.padding(.bottom, safeInsets.bottom > 0 ? 0 : 16)
+					if showDebugInfo {
+						debugPanel
+							.transition(.asymmetric(
+								insertion: .move(edge: .top).combined(with: .opacity).combined(with: .scale(scale: 0.95)),
+								removal: .move(edge: .top).combined(with: .opacity)
+							))
 					}
-					
-					// 右侧控制面板（曝光 + 对焦 + 白平衡）
-					VStack(spacing: 6) {
-						Spacer()
-						exposureControlPanel
-						focusControlPanel
-						whiteBalanceControlPanel
-						Spacer()
+
+					// AI 摄影建议卡片（仅在 AI 建议开启且引导未激活时显示）
+					if viewModel.isPhotographyAdviceEnabled,
+					   !viewModel.isAIGuidanceActive,
+					   let analysis = viewModel.photographyAnalysis {
+						CompositionAdviceCard(
+							result: analysis,
+							isLoading: viewModel.isPhotographyAnalyzing
+						)
+						.padding(.top, 8)
+						.padding(.horizontal, 20)
+						.frame(maxWidth: .infinity, alignment: .leading)
+						.transition(.opacity.combined(with: .move(edge: .top)))
 					}
-					.padding(.trailing, 4)
+
+					Spacer()
+
+					bottomSection(bottomInset: max(safeInsets.bottom, 16))
+						.padding(.bottom, safeInsets.bottom > 0 ? 0 : 16)
 				}
 				.zIndex(1)
+
+				// 右侧专业控制列：默认收起为小圆钮，点按展开对应滑杆
+				professionalControlColumn
+					.zIndex(2)
 			}
 		}
 		.navigationBarBackButtonHidden(true)
@@ -267,7 +260,6 @@ struct CaptureView: View {
 				}
 			},
 			onToggleCamera: {
-				triggerCameraFlipAnimation()
 				viewModel.toggleCameraPosition()
 			},
 			onToggleAutoCapture: {
@@ -324,7 +316,6 @@ struct CaptureView: View {
 				Spacer()
 				SecondaryCircleButton(systemName: "arrow.triangle.2.circlepath.camera") {
 					HapticManager.shared.light()
-					triggerCameraFlipAnimation()
 					viewModel.toggleCameraPosition()
 				}
 			}
@@ -380,12 +371,80 @@ struct CaptureView: View {
 		}
 	}
 	
-	// MARK: - 曝光控制面板（Phase 1）
-	
+	// MARK: - 右侧专业控制列（收起为圆钮，点按展开，一次只开一个）
+
+	private enum ProPanel: Equatable {
+		case exposure, focus, whiteBalance
+	}
+
 	@ViewBuilder
-	private var exposureControlPanel: some View {
-		// 只有设备能力就绪后才显示
-		if viewModel.cameraCapability.isoRange.upperBound > 0 {
+	private var professionalControlColumn: some View {
+		VStack(spacing: 14) {
+			// 展开的滑杆面板（在入口按钮上方弹出）
+			if let expanded = expandedPanel {
+				expandedPanelView(for: expanded)
+					.transition(.opacity.combined(with: .scale(scale: 0.9, anchor: .trailing)))
+			}
+
+			Spacer(minLength: 12)
+
+			// 入口按钮组（仅显示设备支持的参数）
+			VStack(spacing: 14) {
+				if viewModel.cameraCapability.isoRange.upperBound > 0 {
+					proEntryButton(panel: .exposure, icon: "plusminus.circle.fill", accent: .yellow)
+				}
+				if viewModel.cameraCapability.supportsManualFocus {
+					proEntryButton(panel: .focus, icon: "camera.viewfinder", accent: Color(red: 0.35, green: 0.70, blue: 1.0))
+				}
+				if viewModel.cameraCapability.supportsManualWhiteBalance {
+					proEntryButton(panel: .whiteBalance, icon: "circle.lefthalf.filled", accent: .orange)
+				}
+			}
+		}
+		.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .trailing)
+		.padding(.trailing, 10)
+		// 垂直居中偏下，并避开底部快门区
+		.padding(.bottom, 170)
+		.padding(.top, 40)
+	}
+
+	/// 专业参数入口按钮
+	private func proEntryButton(panel: ProPanel, icon: String, accent: Color) -> some View {
+		let isActive = expandedPanel == panel
+		return Button {
+			HapticManager.shared.light()
+			withAnimation(DesignSystem.Animation.smooth) {
+				expandedPanel = (expandedPanel == panel) ? nil : panel
+			}
+		} label: {
+			ZStack {
+				Circle()
+					.fill(isActive ? accent : Color.black.opacity(0.45))
+					.frame(width: 40, height: 40)
+					.overlay(
+						Circle().stroke(Color.white.opacity(isActive ? 0.9 : 0.15), lineWidth: 1)
+					)
+				Image(systemName: icon)
+					.font(.system(size: 16, weight: .medium))
+					.foregroundColor(isActive ? Color.black.opacity(0.85) : .white)
+			}
+			.contentShape(Circle())
+		}
+		.accessibilityLabel(proPanelName(panel))
+	}
+
+	private func proPanelName(_ panel: ProPanel) -> String {
+		switch panel {
+		case .exposure: return "曝光"
+		case .focus: return "对焦"
+		case .whiteBalance: return "白平衡"
+		}
+	}
+
+	@ViewBuilder
+	private func expandedPanelView(for panel: ProPanel) -> some View {
+		switch panel {
+		case .exposure:
 			ExposureControlView(
 				exposureBias: Binding(
 					get: { viewModel.photographyStrategy.manualExposureBias },
@@ -403,15 +462,8 @@ struct CaptureView: View {
 					viewModel.setExposureBias(bias)
 				}
 			)
-			.transition(.opacity.combined(with: .move(edge: .trailing)))
-		}
-	}
-	
-	// MARK: - 对焦控制面板（Phase 2）
-	
-	@ViewBuilder
-	private var focusControlPanel: some View {
-		if viewModel.cameraCapability.supportsManualFocus {
+
+		case .focus:
 			FocusControlView(
 				focusPosition: Binding(
 					get: { viewModel.photographyStrategy.manualFocusPosition ?? 0.5 },
@@ -429,15 +481,8 @@ struct CaptureView: View {
 					viewModel.setManualFocusPosition(position)
 				}
 			)
-			.transition(.opacity.combined(with: .move(edge: .trailing)))
-		}
-	}
-	
-	// MARK: - 白平衡控制面板（Phase 3）
-	
-	@ViewBuilder
-	private var whiteBalanceControlPanel: some View {
-		if viewModel.cameraCapability.supportsManualWhiteBalance {
+
+		case .whiteBalance:
 			WhiteBalanceControlView(
 				temperature: Binding(
 					get: { viewModel.photographyStrategy.manualWhiteBalanceTemp ?? 5500 },
@@ -456,7 +501,6 @@ struct CaptureView: View {
 					viewModel.setWhiteBalanceTemperature(temp)
 				}
 			)
-			.transition(.opacity.combined(with: .move(edge: .trailing)))
 		}
 	}
 	
@@ -574,13 +618,6 @@ struct CaptureView: View {
 			withAnimation(.spring(response: 0.4, dampingFraction: 0.7)) {
 				captureAnimationScale = 1.0
 			}
-		}
-	}
-
-	private func triggerCameraFlipAnimation() {
-		// 3D 翻转动画
-		withAnimation(.spring(response: 0.5, dampingFraction: 0.75)) {
-			cameraFlipRotation += 180
 		}
 	}
 }
