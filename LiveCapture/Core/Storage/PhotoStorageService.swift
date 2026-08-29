@@ -55,7 +55,7 @@ final class PhotoStorageService {
         }
     }
 
-    func savePhoto(data: Data, detectionMethod: String? = nil) {
+    func savePhoto(data: Data, detectionMethod: String? = nil, compositionScore: Int? = nil) {
         let id = UUID()
         let photoURL = photosDir.appendingPathComponent(PhotoRecord.photoFilename(for: id))
         let thumbURL = thumbnailsDir.appendingPathComponent(PhotoRecord.thumbnailFilename(for: id))
@@ -93,7 +93,8 @@ final class PhotoStorageService {
             let record = PhotoRecord(id: id, creationDate: Date(),
                                      detectionMethod: detectionMethod,
                                      iso: exif.iso, shutterSpeed: exif.shutter, aperture: exif.aperture,
-                                     imageWidth: exif.width, imageHeight: exif.height)
+                                     imageWidth: exif.width, imageHeight: exif.height,
+                                     compositionScore: compositionScore)
             self.records.insert(record, at: 0)
             self.persist()
         }

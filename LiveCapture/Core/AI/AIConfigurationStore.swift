@@ -150,3 +150,47 @@ final class AIConfigurationStore: ObservableObject {
         model = Self.chatModel
     }
 }
+
+// MARK: - AI 使用计数
+
+/// AI 建议交付次数计数器（首页"今日数据"展示用）。
+/// 按天滚动的轻量计数：UserDefaults 存今日次数 + 日期戳 + 累计值，
+/// 跨天首次读取时自动归零。线程安全（UserDefaults 原子写）。
+enum AIUsageCounter {
+
+    private enum Key {
+        static let todayCount = "aiUsage.adviceToday"
+        static let todayStamp = "aiUsage.adviceTodayStamp"
+        static let total = "aiUsage.adviceTotal"
+    }
+
+    private static let dayFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "yyyy-MM-dd"
+        return f
+    }()
+
+    /// 记一次 AI 建议交付（Advisor 成功返回建议时调用）
+    static func recordAdviceDelivered() {
+        let d = UserDefaults.standard
+        let today = dayFormatter.string(from: Date())
+        if d.string(forKey: Key.todayStamp) != today {
+            d.set(today, forKey: Key.todayStamp)
+            d.set(0, forKey: Key.todayCount)
+        }
+        d.set(d.integer(forKey: Key.todayCount) + 1, forKey: Key.todayCount)
+        d.set(d.integer(forKey: Key.total) + 1, forKey: Key.total)
+    }
+
+    /// 今天的 AI 建议次数（日期戳不匹配时视为 0）
+    static var adviceCountToday: Int {
+        let d = UserDefaults.standard
+        guard d.string(forKey: Key.todayStamp) == dayFormatter.string(from: Date()) else { return 0 }
+        return d.integer(forKey: Key.todayCount)
+    }
+
+    /// 累计 AI 建议次数
+    static var adviceCountTotal: Int {
+        UserDefaults.standard.integer(forKey: Key.total)
+    }
+}

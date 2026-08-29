@@ -197,6 +197,9 @@ final class PhotographyAdvisor {
                     
                     switch result {
                     case .success(let advice):
+                        // 建议成功交付，计入首页"今日 AI 建议"统计
+                        AIUsageCounter.recordAdviceDelivered()
+
                         // 用 AI 返回的文字更新 target 里的建议
                         var finalTarget = target
                         finalTarget.adviceTitle = advice.title

@@ -15,6 +15,10 @@ struct PhotoRecord: Identifiable, Codable, Equatable {
     var imageWidth: Int?
     var imageHeight: Int?
 
+    /// 拍下这张照片那一刻的 AI 构图评分（0-100）。
+    /// 旧记录没有该字段——可选属性经合成解码 decodeIfPresent，老 records.json 直接兼容。
+    var compositionScore: Int?
+
     init(id: UUID = UUID(),
          creationDate: Date = Date(),
          localIdentifier: String? = nil,
@@ -23,7 +27,8 @@ struct PhotoRecord: Identifiable, Codable, Equatable {
          shutterSpeed: Double? = nil,
          aperture: Double? = nil,
          imageWidth: Int? = nil,
-         imageHeight: Int? = nil) {
+         imageHeight: Int? = nil,
+         compositionScore: Int? = nil) {
         self.id = id
         self.creationDate = creationDate
         self.localIdentifier = localIdentifier
@@ -33,6 +38,7 @@ struct PhotoRecord: Identifiable, Codable, Equatable {
         self.aperture = aperture
         self.imageWidth = imageWidth
         self.imageHeight = imageHeight
+        self.compositionScore = compositionScore
     }
 }
 

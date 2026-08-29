@@ -406,6 +406,9 @@ final class CaptureViewModel: ObservableObject {
 	}
 	
 	func capturePhoto() {
+		// 快照此刻的构图评分随照片入库（首页"最近拍摄"展示评分用）。
+		// 在主线程先取好，避免照片回调队列跨线程读 @Published。
+		pendingCompositionScore = photographyAnalysis?.composition.score
 		camera.capturePhoto()
 	}
 	
@@ -858,9 +861,16 @@ final class CaptureViewModel: ObservableObject {
 		}
 		camera.onPhotoDataReady = { [weak self] data in
 			guard let self else { return }
-			PhotoStorageService.shared.savePhoto(data: data, detectionMethod: self.detectionMode.displayName)
+			PhotoStorageService.shared.savePhoto(
+				data: data,
+				detectionMethod: self.detectionMode.displayName,
+				compositionScore: self.pendingCompositionScore
+			)
 		}
 	}
+
+	/// 按下快门那一刻的构图评分（capturePhoto 里在主线程快照）
+	private var pendingCompositionScore: Int?
 	
 	private func handleSampleBuffer(_ sample: CMSampleBuffer) {
 		guard let rawPixel = CMSampleBufferGetImageBuffer(sample) else { return }

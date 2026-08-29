@@ -15,6 +15,16 @@
 - 注意：`project.yml` / `generate_xcode_project.py` 已被删除，**新增 .swift 文件必须手动注册进 `LiveCapture.xcodeproj/project.pbxproj`**（PBXBuildFile + PBXFileReference + 组 children + Sources phase 四处）。
 - git 有完整历史：`7ea6b6c` 是修复前基线，随时可 diff/回滚。
 
+## 已完成（第四批 2026-08-29：首页重构为 AI 摄影工作台）
+
+- **删除全部静态介绍内容**（核心功能卡片、工作原理、技术栈、版本路线图、关于），首页不再复用介绍页
+- 新首页结构（自上而下）：问候语（按时段变化）+ 标题 → 大型渐变「开始 AI 拍摄」入口（相机图标 + 能力摘要 + 装饰光斑）→ AI 拍摄助手状态卡（AI 建议 / 构图评分 / 人物检测 三行实时状态，右上角快捷入口进设置）→ 最近拍摄横滑预览（缩略图 + 右上角构图评分配色角标，点开进 PhotoBrowserView，无照片时整段隐藏）→ 「今天」数据卡（拍摄照片 / AI 建议次数 / 平均评分 三列）
+- **修复死按钮 bug**：旧首页「开始拍摄/查看照片」发 NotificationCenter 通知但全工程无监听者。新增 `AppRouter`（MainTabView.swift 内，@MainActor ObservableObject），TabView selection 绑定 router，注入 environmentObject，首页可跳相机/图库/设置
+- **构图评分随照片入库**：PhotoRecord 新增 `compositionScore: Int?`（合成 Codable 的 decodeIfPresent 天然兼容旧 records.json）；CaptureViewModel 按快门时在主线程快照当前评分传给 savePhoto
+- **AI 建议次数统计**：新增 `AIUsageCounter`（AIConfigurationStore.swift 内），Advisor 每次成功交付建议时计数，按天滚动（UserDefaults：今日值 + 日期戳 + 累计值）
+- **文件归位**：HomeView 定义原本在 LiveComposeView.swift、GalleryView 定义在 HomeView.swift（文件名与内容错位），已互换并移到 Features/Home/Views/，pbxproj 组结构同步（LiveCompose 组删除）
+- HomeViewModel 新增 todayPhotoCount / todayAverageScore / recentRecords；Debug/Release 双配置编译通过
+
 ## 已完成（第三批 2026-08-29：设置页 AI 助手 + UI 重构）
 
 ### 功能
@@ -87,7 +97,7 @@
 5. ~~API Key 明文在 Info.plist~~ 已解决：设置页配置 + Keychain 存储（第三批），Info.plist 仅兜底，可择机从 Info.plist 移除 DeepSeekAPIKey 字段
 6. CameraControlEngine/Advisor 对 debounce 策略的双通道评估还有优化空间；`cameraManager.zoomState` 在 sessionQueue 上被跨线程读取（历史模式，可择机重构为参数直传）
 7. 设计文档 `../ai-photography-assistant-design/ai-photography-assistant-design.html` 里有五维构图评分、机位推荐、Qwen3-VL、ARKit 的演进方案，可与代码对照推进（AI 助手设置区已为多 provider 预留：AIConfigurationStore + AIAdviceProvider 协议，接 Qwen3-VL 只需新增实现）
-8. 图库（HomeView/GalleryView/SettingsView/ShareCardGenerator）尚未审查过
+8. 图库（GalleryView/PhotoBrowserView/ShareCardGenerator）尚未审查过；首页「AI 建议」次数在建议开启时会随分析频率持续累计（Advisor 内 3s 节流），语义是"建议交付次数"而非"会话数"，如需更粗粒度可在 Advisor 侧加节流计数
 
 ### P3（功能演进）
 9. 夜景/低光检测（路线图 Phase 6）、HDR（Phase 7）

@@ -16,6 +16,29 @@ final class HomeViewModel: ObservableObject {
             .store(in: &cancellables)
     }
 
+    // MARK: - 首页统计
+
+    /// 今天的拍摄数量
+    var todayPhotoCount: Int {
+        records.filter { Calendar.current.isDateInToday($0.creationDate) }.count
+    }
+
+    /// 今天照片的平均 AI 构图评分（没有带评分的照片时为 nil）
+    var todayAverageScore: Int? {
+        let scores = records
+            .filter { Calendar.current.isDateInToday($0.creationDate) }
+            .compactMap { $0.compositionScore }
+        guard !scores.isEmpty else { return nil }
+        return scores.reduce(0, +) / scores.count
+    }
+
+    /// 最近拍摄（首页横滑预览用，新→旧）
+    var recentRecords: ArraySlice<PhotoRecord> {
+        records.prefix(8)
+    }
+
+    // MARK: - 照片访问
+
     func deleteRecord(_ id: UUID) {
         PhotoStorageService.shared.deleteRecord(id)
     }
