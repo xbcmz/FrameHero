@@ -83,10 +83,17 @@ import AVFoundation
 #if os(iOS)
 import UIKit
 
+/// 持有预览层引用，供外部做点按对焦的坐标转换。
+/// （AVCaptureVideoPreviewLayer.captureDevicePointConverted 需要 layer 实例）
+final class PreviewLayerHolder {
+    weak var layer: AVCaptureVideoPreviewLayer?
+}
+
 /// SwiftUI 封装的摄像头预览视图，使用 UIViewRepresentable
 struct CameraPreviewView: UIViewRepresentable {
     let session: AVCaptureSession // 摄像头会话
     let isFrontCamera: Bool // 是否为前置摄像头
+    var holder: PreviewLayerHolder? = nil // 可选的预览层持有者
 
     /// 创建并配置预览 UIView
     func makeUIView(context: Context) -> PreviewUIView {
@@ -94,12 +101,14 @@ struct CameraPreviewView: UIViewRepresentable {
         view.videoPreviewLayer.session = session // 绑定会话
         view.videoPreviewLayer.videoGravity = .resizeAspectFill // 填充模式
         applyStabilizationIfAvailable(on: view.videoPreviewLayer.connection) // 应用防抖
-        
+
         // 🔥 前置摄像头时使用 transform 翻转（最高优先级）
         if isFrontCamera {
             view.videoPreviewLayer.transform = CATransform3DMakeScale(-1, 1, 1)
         }
-        
+
+        holder?.layer = view.videoPreviewLayer
+
         return view
     }
 

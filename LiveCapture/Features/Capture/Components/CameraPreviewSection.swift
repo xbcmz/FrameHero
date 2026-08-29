@@ -76,17 +76,32 @@ struct CameraPreviewSection: View {
 	let isAIGuidanceActive: Bool
 	/// AI 建议标题（可选）
 	let adviceTitle: String? = nil
-	
+
+	// MARK: - 点按对焦
+	/// 预览层持有者（用于坐标转换）
+	var previewHolder: PreviewLayerHolder? = nil
+	/// 点按预览回调（参数为预览视图内的局部坐标）
+	var onTapInPreview: ((CGPoint) -> Void)? = nil
+
 	var body: some View {
 		GeometryReader { previewGeo in
 			let composition = Self.compositionRect(in: previewGeo.size)
 			let canvas = CGRect(origin: .zero, size: previewGeo.size)
-			
+
 			ZStack {
-				CameraPreviewView(session: session, isFrontCamera: isFrontCamera)
+				CameraPreviewView(session: session, isFrontCamera: isFrontCamera, holder: previewHolder)
 					.frame(width: composition.width, height: composition.height)
-					.position(x: composition.midX, y: composition.midY)
 					.clipped()
+					.contentShape(Rectangle())
+					// 手势必须挂在 .position() 之前，
+					// 这样回调坐标才是与预览层 bounds 一致的本地坐标
+					.gesture(
+						SpatialTapGesture()
+							.onEnded { value in
+								onTapInPreview?(value.location)
+							}
+					)
+					.position(x: composition.midX, y: composition.midY)
 				
 				ContentOverlayView(
 					compositionRect: composition,

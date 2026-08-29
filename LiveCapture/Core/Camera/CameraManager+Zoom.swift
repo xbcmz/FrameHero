@@ -238,9 +238,11 @@ extension CameraManager {
     }
 
     /// 将目标变焦倍率限制在硬件支持的区间内。
+    /// 上限用真实设备能力（zoomRange 已在镜头切换时按 maxAvailableVideoZoomFactor 更新），
+    /// 硬编码值会让支持的倍率被错误封顶。
     func clampZoom(_ factor: CGFloat) -> CGFloat {
         let lower = zoomRange.lowerBound
-        let upper = 10.0
+        let upper = max(zoomRange.upperBound, lower)
         return min(max(factor, lower), upper)
     }
 

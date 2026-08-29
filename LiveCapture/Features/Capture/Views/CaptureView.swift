@@ -122,6 +122,10 @@ struct CaptureView: View {
 	@State private var captureAnimationScale: CGFloat = 1.0
 	@State private var captureFlashOpacity: Double = 0.0
 	@State private var cameraFlipRotation: Double = 0.0
+	// 点按对焦指示器
+	@State private var focusIndicatorPoint: CGPoint? = nil
+	@State private var focusIndicatorOpacity: Double = 0.0
+	@State private var previewHolder = PreviewLayerHolder()
 	@Environment(\.dismiss) private var dismiss
 
 	var body: some View {
@@ -149,7 +153,11 @@ struct CaptureView: View {
 					},
 					showCropGuide: viewModel.showCropGuide,
 					guidanceResult: viewModel.displayGuidanceResult,
-					isAIGuidanceActive: viewModel.isAIGuidanceActive
+					isAIGuidanceActive: viewModel.isAIGuidanceActive,
+					previewHolder: previewHolder,
+					onTapInPreview: { point in
+						handleTapToFocus(at: point)
+					}
 				)
 				.frame(width: geo.size.width, height: geo.size.height)
 				.scaleEffect(captureAnimationScale)
@@ -171,6 +179,17 @@ struct CaptureView: View {
 						.ignoresSafeArea()
 						.zIndex(0.5)
 						.allowsHitTesting(false)
+				}
+
+				// 点按对焦指示器
+				if focusIndicatorOpacity > 0, let focusPoint = focusIndicatorPoint {
+					RoundedRectangle(cornerRadius: 4)
+						.stroke(Color.yellow, lineWidth: 1.5)
+						.frame(width: 64, height: 64)
+						.position(focusPoint)
+						.opacity(focusIndicatorOpacity)
+						.allowsHitTesting(false)
+						.zIndex(0.6)
 				}
 
 				// UI 层
@@ -488,6 +507,31 @@ struct CaptureView: View {
 	}
 
 	// MARK: - Gestures
+
+	/// 点按对焦/曝光：预览层本地坐标 → 设备坐标，并显示对焦框动画
+	private func handleTapToFocus(at point: CGPoint) {
+		guard let layer = previewHolder.layer else { return }
+		var devicePoint = layer.captureDevicePointConverted(fromLayerPoint: point)
+		// 前置摄像头预览是手动 transform 镜像的，captureDevicePointConverted
+		// 不感知该 transform，需要手动翻转 X
+		if viewModel.isFrontCamera {
+			devicePoint.x = 1 - devicePoint.x
+		}
+		viewModel.focusAtDevicePoint(devicePoint)
+		HapticManager.shared.light()
+
+		// 指示器位置：预览本地坐标 + 构图区域在画布中的偏移
+		let rect = viewModel.compositionRectInView
+		focusIndicatorPoint = CGPoint(x: point.x + rect.minX, y: point.y + rect.minY)
+		withAnimation(.easeOut(duration: 0.15)) {
+			focusIndicatorOpacity = 1.0
+		}
+		DispatchQueue.main.asyncAfter(deadline: .now() + 0.9) {
+			withAnimation(.easeIn(duration: 0.25)) {
+				focusIndicatorOpacity = 0.0
+			}
+		}
+	}
 
 	private var pinchZoomGesture: some Gesture {
 		MagnificationGesture()

@@ -61,17 +61,31 @@ final class CompositionGuidanceEngine {
     ) -> GuidanceResult {
         
         // 1. 计算水平方向
+        // dx = 目标 - 当前（图像归一化坐标，x 向右）。
+        // 主体需要在画面中右移（dx>0）→ 场景内容右移 → 手机向左移。
         let dx = target.targetCenterX - current.subjectCenterX
-        let horizontalDir = directionFor(delta: dx, tolerance: positionTolerance)
-        
+        let horizontalDir: MoveDirection
+        if abs(dx) < positionTolerance {
+            horizontalDir = .stay
+        } else {
+            horizontalDir = dx > 0 ? .moveLeft : .moveRight
+        }
+
         // 2. 计算垂直方向
+        // dy = 目标 - 当前（检测坐标 Y 轴向上，y 大 = 画面上方）。
+        // 主体需要在画面中上移（dy>0）→ 场景内容上移 → 手机向下移。
         let dy = target.targetCenterY - current.subjectCenterY
-        let verticalDir = directionFor(delta: dy, tolerance: positionTolerance)
-        
+        let verticalDir: MoveDirection
+        if abs(dy) < positionTolerance {
+            verticalDir = .stay
+        } else {
+            verticalDir = dy > 0 ? .moveDown : .moveUp
+        }
+
         // 3. 计算距离方向（基于高度差）
         let dHeight = target.targetHeightRatio - current.subjectHeightRatio
         let distanceDir = distanceDirectionFor(delta: dHeight, tolerance: sizeTolerance)
-        
+
         // 4. 计算进度
         let progress = calculateProgress(
             current: current,
@@ -80,15 +94,15 @@ final class CompositionGuidanceEngine {
             dy: dy,
             dHeight: dHeight
         )
-        
-        // 5. 计算视图坐标
+
+        // 5. 计算视图坐标（检测坐标 Y 轴向上，视图坐标 Y 轴向下，必须翻转）
         let currentPoint = CGPoint(
             x: current.subjectCenterX * viewSize.width,
-            y: current.subjectCenterY * viewSize.height
+            y: (1 - current.subjectCenterY) * viewSize.height
         )
         let targetPoint = CGPoint(
             x: target.targetCenterX * viewSize.width,
-            y: target.targetCenterY * viewSize.height
+            y: (1 - target.targetCenterY) * viewSize.height
         )
         
         // 6. 判断是否对齐
@@ -118,36 +132,20 @@ final class CompositionGuidanceEngine {
         alignedStartTime = nil
     }
     
-    // MARK: - 方向计算
-    
-    /// 根据偏差值计算方向
-    private func directionFor(delta: CGFloat, tolerance: CGFloat) -> MoveDirection {
-        if abs(delta) < tolerance {
-            return .stay
-        } else if delta > 0 {
-            // 目标在当前位置的"正方向"
-            // 对于 X：目标在右边 → 手机需要往右移（画面里的主体就往左移？不对...）
-            // 注意：主体在画面中偏左，想让主体到右边，手机需要往左移
-            // 但对用户来说，"向右移"更容易理解为"把主体移到右边"
-            // 所以我们返回的是"主体需要移动的方向"，用户直觉上对应手机移动方向
-            return .moveRight
-        } else {
-            return .moveLeft
-        }
-    }
-    
-    /// 计算距离方向（靠近/远离）
-    private func distanceDirectionFor(delta: CGFloat, tolerance: CGFloat) -> MoveDirection {
-        if abs(delta) < tolerance {
-            return .stay
-        } else if delta > 0 {
-            // 目标更大 → 需要靠近
-            return .moveCloser
-        } else {
-            // 目标更小 → 需要远离
-            return .moveFarther
-        }
-    }
+	// MARK: - 方向计算
+
+	/// 计算距离方向（靠近/远离）
+	private func distanceDirectionFor(delta: CGFloat, tolerance: CGFloat) -> MoveDirection {
+		if abs(delta) < tolerance {
+			return .stay
+		} else if delta > 0 {
+			// 目标更大 → 需要靠近
+			return .moveCloser
+		} else {
+			// 目标更小 → 需要远离
+			return .moveFarther
+		}
+	}
     
     // MARK: - 进度计算
     

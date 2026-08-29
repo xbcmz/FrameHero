@@ -218,7 +218,7 @@ final class CaptureViewModel: ObservableObject {
 	
 	@Published private(set) var photographyAnalysis: PhotographyAnalysisResult?
 	@Published private(set) var isPhotographyAnalyzing: Bool = false
-	@Published var isPhotographyAdviceEnabled: Bool = true  // AI 建议开关
+	@Published var isPhotographyAdviceEnabled: Bool = false  // AI 建议开关（默认关闭，用户主动开启）
 	
 	// MARK: - 构图引导（AI 目标 + 实时导航）
 	
@@ -312,6 +312,16 @@ final class CaptureViewModel: ObservableObject {
 	private var detectionInProgress: Bool = false
 	private var cancellables: Set<AnyCancellable> = []
 	private var autoCaptureWorkItem: DispatchWorkItem?
+
+	/// 单帧分析在途标志（本地防抖，不依赖 AI 请求时长，
+	/// 避免网络请求期间整条构图/引导流水线停摆）
+	private var isFrameAnalysisInFlight = false
+
+	/// 检测失败后的冷却时间戳（避免逐帧重试推理）
+	private var lastDetectionFailureTime: Date?
+
+	/// 追踪点更新的节流时间戳（CoreMotion 60Hz → 主线程 ~30Hz）
+	private var lastMotionUIUpdate: Date = .distantPast
 	
 	// MARK: - 相机控制引擎（Phase 1）
 	
@@ -507,9 +517,18 @@ final class CaptureViewModel: ObservableObject {
 		photographyStrategy.focusControl = .aiAuto
 		photographyStrategy.focusPointOfInterest = normalizedPoint
 		photographyStrategy.focusPreference = .subjectLock
-		
+
 		// 直接调用相机设置对焦点（更直接）
 		camera.setFocusPointOfInterest(normalizedPoint)
+	}
+
+	/// 点按对焦/曝光（设备归一化坐标，由预览层 captureDevicePointConverted 转换而来，
+	/// 前置摄像头的镜像已在调用方处理）
+	func focusAtDevicePoint(_ point: CGPoint) {
+		photographyStrategy.focusControl = .aiAuto
+		photographyStrategy.focusPointOfInterest = point
+		photographyStrategy.focusPreference = .subjectLock
+		camera.setFocusPointOfInterest(point)
 	}
 	
 	/// 重置对焦为全自动
@@ -707,20 +726,25 @@ final class CaptureViewModel: ObservableObject {
 			.receive(on: DispatchQueue.main)
 			.sink { [weak self] motion in
 				guard let self else { return }
+				// 节流到 ~30Hz：追踪点足够顺滑，主线程负载减半
+				let now = Date()
+				guard now.timeIntervalSince(self.lastMotionUIUpdate) >= 0.033 else { return }
+				self.lastMotionUIUpdate = now
+
 				self.boxCenterManager.updateCenter(with: motion)
-				
+
+				// 没有锁定的检测目标时，对齐/裁切框计算都是无效功
+				guard self.detectionReady else { return }
+
 				self.distanceToCenter = self.boxCenterManager.distanceToCenter()
-				
+
 				if let adjusted = self.adjustedCropRectInView {
 					self.cropRectInView = adjusted
 				}
-				
-				if self.detectionReady {
-					self.checkAlignmentByDistance()
-				}
+				self.checkAlignmentByDistance()
 			}
 			.store(in: &cancellables)
-		
+
 		motion.$isStable
 			.receive(on: DispatchQueue.main)
 			.sink { [weak self] stable in
@@ -728,7 +752,7 @@ final class CaptureViewModel: ObservableObject {
 				self.motionIsStable = stable
 			}
 			.store(in: &cancellables)
-		
+
 		motion.$largeMotionDetected
 			.receive(on: DispatchQueue.main)
 			.sink { [weak self] detected in
@@ -746,13 +770,12 @@ final class CaptureViewModel: ObservableObject {
 			.sink { [weak self] saved in
 				guard let self, saved else { return }
 				HapticManager.shared.success()
-				self.setStage(.savingPhoto, message: "照片已保存到相册")
-				// 1秒后自动关闭流水线并刷新状态
+				self.setStage(.savingPhoto, message: "照片已保存")
+				// 短暂展示保存结果后回到就绪态。
+				// 注意：不能关闭构图流水线——用户连续拍摄时每次都要重新开魔法棒是重大体验 bug
 				DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
 					if self.pipelineStage == .savingPhoto {
-						self.isCompositionPipelineEnabled = false
 						self.resetDetectionState()
-						// 🔥 使用统一刷新机制
 						self.refreshUserGuidance()
 					}
 				}
@@ -830,21 +853,23 @@ final class CaptureViewModel: ObservableObject {
 	private func handleSampleBuffer(_ sample: CMSampleBuffer) {
 		guard let rawPixel = CMSampleBufferGetImageBuffer(sample) else { return }
 		let orientation = pixelOrientation(for: rawPixel)
-		
-		// AI 摄影构图分析（节流控制，1秒1次，生成目标构图）
+
+		// AI 摄影构图分析（节流控制，内部 10fps 节流，生成目标构图与策略）
 		analyzePhotographyIfNeeded(pixel: rawPixel, orientation: orientation)
-		
-		// 🔥 实时引导计算（每帧都跑，让箭头跟手）
-		// 目标构图（AI 生成的）更新慢没关系，但引导计算必须实时
-		DispatchQueue.main.async {
-			self.updateGuidanceResult()
+
+		// 实时引导计算需要跟手，但仅在 AI 引导激活时才有意义，
+		// 避免空闲状态下每帧向主线程派发
+		if guidanceMode == .aiTarget {
+			DispatchQueue.main.async {
+				self.updateGuidanceResult()
+			}
 		}
-		
-		// 🔥 只有在流水线开启时才执行检测流程
+
+		// 只有在流水线开启时才执行检测流程
 		guard isCompositionPipelineEnabled else {
 			return
 		}
-		
+
 		guard motion.isStable else {
 			if !detectionReady {
 				DispatchQueue.main.async {
@@ -853,14 +878,20 @@ final class CaptureViewModel: ObservableObject {
 			}
 			return
 		}
-		
+
+		// 上次识别失败后的冷却期，避免逐帧重试推理
+		if let failure = lastDetectionFailureTime,
+		   Date().timeIntervalSince(failure) < 1.5 {
+			return
+		}
+
 		guard let compositionPixel = makeCompositionPixelBuffer(from: rawPixel, orientation: orientation) else {
 			DispatchQueue.main.async {
 				self.setStage(.error, message: "无法处理画面")
 			}
 			return
 		}
-		
+
 		if !detectionReady && !detectionInProgress {
 			DispatchQueue.main.async {
 				self.setStage(.detectingRegion, message: "设备已稳定，开始识别目标区域...")
@@ -868,9 +899,6 @@ final class CaptureViewModel: ObservableObject {
 			}
 			detectCropRegion(using: compositionPixel, orientation: orientation)
 		}
-		
-		// AI 摄影构图分析（独立于裁切检测，节流控制）
-		analyzePhotographyIfNeeded(pixel: rawPixel, orientation: orientation)
 	}
 	
 	// MARK: - AI 摄影分析
@@ -889,7 +917,7 @@ final class CaptureViewModel: ObservableObject {
 		orientation: CGImagePropertyOrientation
 	) {
 		guard isPhotographyAdviceEnabled else { return }
-		
+
 		// 节流控制
 		let now = Date()
 		if let last = lastPhotographyAnalysisTime,
@@ -897,14 +925,17 @@ final class CaptureViewModel: ObservableObject {
 			return
 		}
 		lastPhotographyAnalysisTime = now
-		
-		// 防抖：如果正在分析中，跳过
-		guard !photographyAdvisor.isAnalyzing else { return }
-		
+
+		// 防抖：上一帧分析尚未返回时跳过。
+		// 注意：这个标志只覆盖单帧分析本身，与 AI 网络请求无关，
+		// 否则网络慢时整条构图/引导流水线会跟着冻结
+		guard !isFrameAnalysisInFlight else { return }
+		isFrameAnalysisInFlight = true
+
 		DispatchQueue.main.async {
 			self.isPhotographyAnalyzing = true
 		}
-		
+
 		photographyAdvisor.analyzeFrame(
 			pixel,
 			orientation: orientation,
@@ -912,16 +943,17 @@ final class CaptureViewModel: ObservableObject {
 			focalLength: zoomState.focalLength
 		) { [weak self] result in
 			guard let self = self else { return }
+			self.isFrameAnalysisInFlight = false
 			DispatchQueue.main.async {
 				self.photographyAnalysis = result
 				self.isPhotographyAnalyzing = false
-				
+
 				// 更新目标构图
 				self.compositionTarget = result.target
-				
+
 				// 更新当前构图状态
 				self.currentComposition = self.makeCurrentComposition(from: result.composition)
-				
+
 				// 如果检测到了人，切换到 AI 引导模式，并计算引导结果
 				if result.composition.person.detected {
 					self.guidanceMode = .aiTarget
@@ -930,49 +962,50 @@ final class CaptureViewModel: ObservableObject {
 					self.guidanceMode = .none
 					self.guidanceResult = nil
 				}
-				
-				// Phase 4: 自动应用 AI 相机策略建议
-				// 只应用处于 .aiAuto 模式的参数（用户锁定/手动的不覆盖）
+
+				// 自动应用 AI 相机策略建议
+				// 只改写处于 .aiAuto 模式的参数（用户锁定/手动的不覆盖）。
+				// 不在这里直接调 controlEngine——统一走 $photographyStrategy
+				// 的 debounce 订阅，避免同一策略被两条通道重复下发到硬件
 				self.applyAICameraStrategy(result.cameraStrategy)
 			}
 		}
 	}
-	
+
 	// MARK: - AI 相机策略自动应用（Phase 4）
-	
+
 	/// 应用 AI 推荐的相机策略偏好
 	///
 	/// **核心规则**：只有当参数处于 `.aiAuto` 模式时才会应用 AI 建议。
 	/// 用户切换到 `.manual` 或 `.locked` 后，AI 不再干预该参数。
 	private func applyAICameraStrategy(_ suggestion: CameraStrategySuggestion) {
 		let strategy = photographyStrategy
-		
+
 		// 镜头偏好
 		if strategy.lensControl == .aiAuto {
 			photographyStrategy.lensPreference = suggestion.lensPreference
 		}
-		
+
 		// 曝光偏好
 		if strategy.exposureControl == .aiAuto {
 			photographyStrategy.brightnessPreference = suggestion.brightnessPreference
 			photographyStrategy.motionPriority = suggestion.motionPriority
 		}
-		
+
 		// 对焦偏好
 		if strategy.focusControl == .aiAuto {
 			photographyStrategy.focusPreference = suggestion.focusPreference
 		}
-		
+
 		// 白平衡偏好
 		if strategy.whiteBalanceControl == .aiAuto {
 			photographyStrategy.whiteBalancePreference = suggestion.whiteBalancePreference
 		}
-		
-		// 景深偏好（未来 Phase）
-		photographyStrategy.depthPreference = suggestion.depthPreference
-		
-		// 通知控制引擎应用策略
-		controlEngine.applyStrategy(photographyStrategy)
+
+		// 景深偏好（与镜头联动，仅在镜头处于 AI 自动时跟随）
+		if strategy.lensControl == .aiAuto {
+			photographyStrategy.depthPreference = suggestion.depthPreference
+		}
 	}
 	
 	// MARK: - 构图引导计算
@@ -1031,6 +1064,7 @@ final class CaptureViewModel: ObservableObject {
 			guard let self, let crop else {
 				DispatchQueue.main.async {
 					self?.setStage(.waitingForStability, message: "目标识别失败，等待重试...")
+					self?.lastDetectionFailureTime = Date()
 					self?.resetDetectionState()
 				}
 				return

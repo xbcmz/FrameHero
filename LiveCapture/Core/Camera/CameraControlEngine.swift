@@ -49,6 +49,21 @@ final class CameraControlEngine {
     
     /// 相机管理器引用（弱引用避免循环）
     private weak var camera: CameraManager?
+
+    // MARK: - 已下发状态（避免重复向硬件重放相同指令）
+    // 反复 lockForConfiguration / 重设相同值会导致对焦 hunting、
+    // 白平衡闪烁和曝光抖动——只在值真正变化时才下发。
+    private var lastAppliedEV: Float?
+    private var lastAppliedCustomISO: Float?
+    private var lastAppliedCustomShutter: CMTime?
+    private var lastAppliedFocusPOI: CGPoint?
+    private var lastAppliedFocusAutoMode: Bool?
+    private var lastAppliedFocusLens: Float?
+    private var lastAppliedMacro: Bool = false
+    private var lastAppliedWBTemp: Float?
+    private var lastAppliedWBManual: Bool = false
+    private var lastAppliedWBAuto: Bool = false
+    private var lastAppliedZoom: CGFloat?
     
     // MARK: - 初始化
     
@@ -114,28 +129,40 @@ final class CameraControlEngine {
             // 用户锁定了曝光，什么都不做
             // （锁定状态下参数保持不变）
             break
-            
+
         case .manual:
             // 用户手动模式：应用用户设置的 EV 值
             // 如果用户设置了自定义 ISO/快门，也一并应用
             if strategy.manualISO != nil || strategy.manualShutter != nil {
-                // 完全手动曝光
-                camera.setCustomExposure(
-                    iso: strategy.manualISO,
-                    shutter: strategy.manualShutter
-                )
+                let isoChanged = strategy.manualISO != lastAppliedCustomISO
+                let shutterChanged = strategy.manualShutter != lastAppliedCustomShutter
+                if isoChanged || shutterChanged {
+                    camera.setCustomExposure(
+                        iso: strategy.manualISO,
+                        shutter: strategy.manualShutter
+                    )
+                    lastAppliedCustomISO = strategy.manualISO
+                    lastAppliedCustomShutter = strategy.manualShutter
+                    lastAppliedEV = nil
+                }
             } else {
                 // 仅手动 EV 偏移
-                camera.setExposureBias(strategy.manualExposureBias)
+                let bias = strategy.manualExposureBias
+                if lastAppliedEV != bias {
+                    camera.setExposureBias(bias)
+                    lastAppliedEV = bias
+                    lastAppliedCustomISO = nil
+                    lastAppliedCustomShutter = nil
+                }
             }
-            
+
         case .aiAuto:
             // AI 自动模式：根据亮度偏好 + 环境计算最佳 EV
             let targetEV = calculateTargetEV(for: strategy)
-            
-            // 如果运动优先级是 freezeMotion，需要确保快门速度够快
-            // （这部分逻辑更复杂，Phase 1 先用 EV 偏移实现）
-            camera.setExposureBias(targetEV)
+            if lastAppliedEV != targetEV {
+                camera.setExposureBias(targetEV)
+                lastAppliedEV = targetEV
+            }
         }
     }
     
@@ -188,34 +215,59 @@ final class CameraControlEngine {
         case .locked:
             // 用户锁定了对焦，什么都不做
             break
-            
+
         case .manual:
             // 用户手动模式：应用手动对焦位置
             if let position = strategy.manualFocusPosition {
-                camera.setManualFocusPosition(position)
+                let rounded = (position * 200).rounded() / 200  // 0.5% 步进去抖
+                if lastAppliedFocusLens != rounded {
+                    camera.setManualFocusPosition(Float(rounded))
+                    lastAppliedFocusLens = rounded
+                    lastAppliedFocusPOI = nil
+                    lastAppliedFocusAutoMode = nil
+                    lastAppliedMacro = false
+                }
             }
-            
+
         case .aiAuto:
             // AI 自动模式：根据对焦偏好调整
             switch strategy.focusPreference {
             case .auto:
                 // 自动追焦
-                camera.setFocusMode(.auto)
-                
+                if lastAppliedFocusAutoMode != true {
+                    camera.setFocusMode(.auto)
+                    lastAppliedFocusAutoMode = true
+                    lastAppliedFocusPOI = nil
+                    lastAppliedMacro = false
+                }
+
             case .subjectLock:
                 // 锁定主体（如果有指定对焦点则锁定在那里）
-                if let poi = strategy.focusPointOfInterest {
-                    camera.setFocusPointOfInterest(poi)
+                // 只在对焦点变化或刚进入该模式时下发，避免反复触发对焦
+                let poi = strategy.focusPointOfInterest
+                if poi != lastAppliedFocusPOI || lastAppliedFocusAutoMode != false {
+                    if let poi = poi {
+                        camera.setFocusPointOfInterest(poi)
+                    }
+                    camera.setFocusMode(.autoLocked)
+                    lastAppliedFocusPOI = poi
+                    lastAppliedFocusAutoMode = false
+                    lastAppliedMacro = false
                 }
-                camera.setFocusMode(.autoLocked)
-                
+
             case .manual:
                 // AI 偏好手动（一般不会出现，但做个 fallback）
                 break
-                
+
             case .macro:
-                // 微距模式：对焦到最近
-                camera.setManualFocusPosition(0.1)
+                // 微距模式：对焦到最近（只下发一次）
+                if !lastAppliedMacro {
+                    camera.setManualFocusPosition(0.1)
+                    lastAppliedMacro = true
+                    lastAppliedFocusLens = 0.1
+                    lastAppliedFocusPOI = nil
+                    lastAppliedFocusAutoMode = nil
+                }
             }
         }
     }
@@ -226,44 +278,77 @@ final class CameraControlEngine {
         _ strategy: PhotographyStrategy,
         camera: CameraManager
     ) {
+        // 50K 步进取整，避免环境估算的微小抖动反复触发白平衡锁定
+        func quantized(_ temp: Float) -> Float { (temp / 50).rounded() * 50 }
+
         switch strategy.whiteBalanceControl {
         case .locked:
             // 用户锁定了白平衡，什么都不做
             break
-            
+
         case .manual:
             // 用户手动模式：应用手动色温
             if let temp = strategy.manualWhiteBalanceTemp {
-                camera.setWhiteBalanceTemperature(temp)
+                let rounded = quantized(temp)
+                if lastAppliedWBTemp != rounded || !lastAppliedWBManual {
+                    camera.setWhiteBalanceTemperature(rounded)
+                    lastAppliedWBTemp = rounded
+                    lastAppliedWBManual = true
+                    lastAppliedWBAuto = false
+                }
             }
-            
+
         case .aiAuto:
             // AI 自动模式：根据白平衡偏好调整
             // 如果设备不支持自定义白平衡增益，所有非 auto 偏好都回退到 auto
             guard capability.supportsManualWhiteBalance else {
-                camera.setWhiteBalanceMode(.auto)
+                if !lastAppliedWBAuto {
+                    camera.setWhiteBalanceMode(.auto)
+                    lastAppliedWBAuto = true
+                    lastAppliedWBManual = false
+                }
                 return
             }
-            
+
             switch strategy.whiteBalancePreference {
             case .auto:
-                camera.setWhiteBalanceMode(.auto)
-                
+                if !lastAppliedWBAuto {
+                    camera.setWhiteBalanceMode(.auto)
+                    lastAppliedWBAuto = true
+                    lastAppliedWBManual = false
+                }
+
             case .warm:
                 // 暖色调：在自动基础上增加色温偏移
-                let warmTemp = environment.estimatedColorTemperature + 500
-                camera.setWhiteBalanceTemperature(warmTemp)
-                
+                applyAIColorTemperature(
+                    quantized(environment.estimatedColorTemperature + 500),
+                    camera: camera
+                )
+
             case .cool:
                 // 冷色调：在自动基础上减少色温偏移
-                let coolTemp = max(2500, environment.estimatedColorTemperature - 500)
-                camera.setWhiteBalanceTemperature(coolTemp)
-                
+                applyAIColorTemperature(
+                    max(2500, quantized(environment.estimatedColorTemperature - 500)),
+                    camera: camera
+                )
+
             case .natural:
                 // 自然真实：略微偏冷，让肤色更自然
-                let naturalTemp = environment.estimatedColorTemperature - 200
-                camera.setWhiteBalanceTemperature(naturalTemp)
+                applyAIColorTemperature(
+                    max(2500, quantized(environment.estimatedColorTemperature - 200)),
+                    camera: camera
+                )
             }
+        }
+    }
+
+    /// AI 偏好下的色温下发（带去重）
+    private func applyAIColorTemperature(_ temp: Float, camera: CameraManager) {
+        if lastAppliedWBTemp != temp || lastAppliedWBAuto {
+            camera.setWhiteBalanceTemperature(temp)
+            lastAppliedWBTemp = temp
+            lastAppliedWBManual = false
+            lastAppliedWBAuto = false
         }
     }
     
@@ -277,25 +362,25 @@ final class CameraControlEngine {
         case .locked:
             // 用户锁定了镜头/变焦，什么都不做
             break
-            
+
         case .manual:
             // 用户手动模式：应用手动变焦倍率
             if let factor = strategy.manualZoomFactor {
-                camera.updateInteractiveZoom(to: factor)
-                camera.finalizeInteractiveZoom(at: factor, smooth: true)
+                if lastAppliedZoom != factor {
+                    camera.finalizeInteractiveZoom(at: factor, smooth: true)
+                    lastAppliedZoom = factor
+                }
             }
-            
+
         case .aiAuto:
             // AI 自动模式：根据镜头偏好选择
             let targetFactor = calculateTargetZoom(for: strategy)
-            
+
             // 只有当目标倍率与当前差距较大时才切换（避免频繁抖动）
             if abs(targetFactor - environment.currentZoomFactor) > 0.3 {
-                // 找到最近的预设点
-                if let preset = closestPreset(for: targetFactor) {
-                    camera.selectZoomPreset(preset)
-                } else {
+                if lastAppliedZoom != targetFactor {
                     camera.finalizeInteractiveZoom(at: targetFactor, smooth: true)
+                    lastAppliedZoom = targetFactor
                 }
             }
         }
@@ -318,14 +403,6 @@ final class CameraControlEngine {
             }
             return min(capability.maxZoom, 3.0)
         }
-    }
-    
-    /// 找到最接近目标倍率的变焦预设
-    private func closestPreset(for targetFactor: CGFloat) -> CameraManager.ZoomPreset? {
-        // 注意：这里我们没有直接访问 presets，简化处理
-        // 实际使用时可以从 camera.zoomPresets 获取
-        // Phase 4 先做基础版本，后续优化
-        return nil
     }
 }
 

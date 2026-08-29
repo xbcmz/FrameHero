@@ -108,18 +108,19 @@ final class AestheticCropDetector {
 		completion: @escaping (AestheticCrop?) -> Void
 	) {
 		queue.async {
-			// 执行 Vision 检测
+			// 执行 Vision 检测（候选生成需要显著性数据）
 			let detections = self.performVisionDetection(
 				pixelBuffer: pixelBuffer,
-				orientation: orientation
+				orientation: orientation,
+				includeSaliency: true
 			)
-			
+
 			// 生成候选裁切框
 			let candidates = self.generateCandidates(
 				from: detections,
 				targetAspectRatio: targetAspectRatio
 			)
-			
+
 			// 评分并选择最佳候选
 			if let best = self.selectBestCandidate(candidates, detections: detections) {
 				completion(best)
@@ -147,10 +148,12 @@ final class AestheticCropDetector {
 		completion: @escaping (RawDetections) -> Void
 	) {
 		queue.async {
-			// 执行 Vision 检测
+			// 执行 Vision 检测（detectPeople 不使用显著性结果，
+			// 而显著性检测是三个请求里最贵的，10Hz 高频路径必须跳过）
 			let detections = self.performVisionDetection(
 				pixelBuffer: pixelBuffer,
-				orientation: orientation
+				orientation: orientation,
+				includeSaliency: false
 			)
 			
 			// 转换为 RawDetections 格式
@@ -199,25 +202,31 @@ final class AestheticCropDetector {
 	
 	private func performVisionDetection(
 		pixelBuffer: CVPixelBuffer,
-		orientation: CGImagePropertyOrientation
+		orientation: CGImagePropertyOrientation,
+		includeSaliency: Bool
 	) -> VisionDetections {
 		let faceRequest = VNDetectFaceRectanglesRequest()
 		let bodyRequest = VNDetectHumanRectanglesRequest()
-		let saliencyRequest = VNGenerateAttentionBasedSaliencyImageRequest()
-		
+
 		let handler = VNImageRequestHandler(
 			cvPixelBuffer: pixelBuffer,
 			orientation: orientation,
 			options: [:]
 		)
-		
-		try? handler.perform([faceRequest, bodyRequest, saliencyRequest])
-		
-		let faces = faceRequest.results ?? []
-		let bodies = bodyRequest.results ?? []
-		let saliency = saliencyRequest.results?.first
-		
-		return VisionDetections(faces: faces, bodies: bodies, saliency: saliency)
+
+		if includeSaliency {
+			let saliencyRequest = VNGenerateAttentionBasedSaliencyImageRequest()
+			try? handler.perform([faceRequest, bodyRequest, saliencyRequest])
+			let saliency = saliencyRequest.results?.first
+			return VisionDetections(faces: faceRequest.results ?? [],
+									bodies: bodyRequest.results ?? [],
+									saliency: saliency)
+		}
+
+		try? handler.perform([faceRequest, bodyRequest])
+		return VisionDetections(faces: faceRequest.results ?? [],
+								bodies: bodyRequest.results ?? [],
+								saliency: nil)
 	}
 	
 	// MARK: - 候选生成
@@ -430,8 +439,8 @@ final class AestheticCropDetector {
 		}
 		
 		let rect = CGRect(
-			x: 0.1 - width / 2,
-			y: 0.1 - height / 2,
+			x: 0.5 - width / 2,
+			y: 0.5 - height / 2,
 			width: width,
 			height: height
 		)

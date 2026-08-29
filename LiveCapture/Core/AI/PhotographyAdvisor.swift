@@ -147,14 +147,19 @@ final class PhotographyAdvisor {
         completion: @escaping (PhotographyAnalysisResult) -> Void
     ) {
         isAnalyzing = true
-        
+
         // Step 1: Vision 检测
         detector.detectPeople(in: pixelBuffer, orientation: orientation) { [weak self] rawDetections in
             guard let self = self else { return }
-            
-            // Step 2: 构图评分
-            var compositionResult = self.compositionEngine.analyze(detections: rawDetections)
-            
+
+            // Step 2: 构图评分（必须把真实变焦传进去，
+            // 否则 recommendedLens 永远基于默认的 1.0x 计算）
+            var compositionResult = self.compositionEngine.analyze(
+                detections: rawDetections,
+                zoomFactor: zoomFactor,
+                focalLength: focalLength
+            )
+
             // 补充镜头信息
             compositionResult.currentZoomFactor = zoomFactor
             compositionResult.currentFocalLength = focalLength
@@ -241,17 +246,24 @@ final class PhotographyAdvisor {
     /// 判断是否应该发起新的 AI 请求
     private func shouldRequestAI(for newResult: CompositionResult) -> Bool {
         let now = Date()
-        
+
         // 第一次必须请求
         guard let lastTime = lastAIRequestTime else {
             return true
         }
-        
+
         // 节流：距离上次请求不足间隔时间，不请求
         if now.timeIntervalSince(lastTime) < aiThrottleInterval {
             return false
         }
-        
+
+        // 检测状态变化（从有人到没人，或从没人到有人）优先于分数阈值——
+        // 场景类型变了就该重新请求，即使分数没变多少
+        let wasPersonDetected = lastResult?.composition.person.detected ?? false
+        if wasPersonDetected != newResult.person.detected {
+            return true
+        }
+
         // 分数变化较大时才请求
         if let lastScore = lastResult?.composition.score {
             let scoreDiff = abs(newResult.score - lastScore)
@@ -259,13 +271,7 @@ final class PhotographyAdvisor {
                 return false  // 分数变化小于 5 分，不请求
             }
         }
-        
-        // 检测状态变化（从有人到没人，或从没人到有人）
-        let wasPersonDetected = lastResult?.composition.person.detected ?? false
-        if wasPersonDetected != newResult.person.detected {
-            return true
-        }
-        
+
         return true
     }
     

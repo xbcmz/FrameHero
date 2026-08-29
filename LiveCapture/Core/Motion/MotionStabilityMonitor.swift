@@ -138,6 +138,12 @@ final class MotionStabilityMonitor: ObservableObject {
     private var lastUpdateTime: TimeInterval = 0
     private let updateInterval: TimeInterval = 0.05  // 最多每50ms更新一次
 
+    // dataQueue 内部状态镜像：避免跨线程读写 @Published 属性，
+    // 且只有状态真正变化时才发布到主线程（否则 SwiftUI 20fps 无效重渲）
+    private var stableState = false
+    private var largeMotionFlag = false
+    private var lastMotionPublishTime: TimeInterval = 0
+
     private var accSamples: [(t: TimeInterval, v: CMAcceleration)] = []
     private var gyroSamples: [(t: TimeInterval, v: CMRotationRate)] = []
     private var lastPitch: Double = 0
@@ -148,38 +154,20 @@ final class MotionStabilityMonitor: ObservableObject {
     private var offsetSmoother = UniformPointSmoother(response: 0.25)
 
     /// 启动传感器采集与稳定性分析。
+    /// 只使用 deviceMotion 融合数据流：它已包含姿态、userAcceleration 和 rotationRate，
+    /// 单独再开加速度计/陀螺仪两条原始流是纯冗余（每秒多 ~120 次队列派发）。
     func start() {
-        guard motion.isAccelerometerAvailable || motion.isGyroAvailable || motion.isDeviceMotionAvailable else { return }
-        motion.accelerometerUpdateInterval = 1.0 / 60.0
-        motion.gyroUpdateInterval = 1.0 / 60.0
+        guard motion.isDeviceMotionAvailable else { return }
         motion.deviceMotionUpdateInterval = 1.0 / 60.0
 
-        if motion.isAccelerometerAvailable {
-            motion.startAccelerometerUpdates(to: OperationQueue()) { [weak self] data, _ in
-                guard let self, let data else { return }
-                // 所有数据操作都在串行队列中进行，确保线程安全
-                self.dataQueue.async {
-                    self.appendAccSample(data.acceleration)
-                    self.updateStabilityIfNeeded()
-                }
-            }
-        }
-        if motion.isGyroAvailable {
-            motion.startGyroUpdates(to: OperationQueue()) { [weak self] data, _ in
-                guard let self, let data else { return }
-                // 所有数据操作都在串行队列中进行，确保线程安全
-                self.dataQueue.async {
-                    self.appendGyroSample(data.rotationRate)
-                    self.updateStabilityIfNeeded()
-                }
-            }
-        }
-        if motion.isDeviceMotionAvailable {
-            motion.startDeviceMotionUpdates(to: OperationQueue()) { [weak self] data, _ in
-                guard let self, let data else { return }
-                self.dataQueue.async {
-                    self.updateDeviceMotion(with: data)
-                }
+        motion.startDeviceMotionUpdates(to: OperationQueue()) { [weak self] data, _ in
+            guard let self, let data else { return }
+            self.dataQueue.async {
+                // userAcceleration 已剔除重力分量，比原始加速度计更适合稳定性判断
+                self.appendAccSample(data.userAcceleration)
+                self.appendGyroSample(data.rotationRate)
+                self.updateStabilityIfNeeded()
+                self.updateDeviceMotion(with: data)
             }
         }
     }
@@ -232,18 +220,23 @@ final class MotionStabilityMonitor: ObservableObject {
         }
     }
 
-    /// 根据最新陀螺仪姿态计算屏幕坐标系中的偏移。
-    private func updateDeviceMotion(with data: CMDeviceMotion) {
-        // 将陀螺仪的俯仰/横滚角映射到屏幕上的二维偏移
-        let pitch = data.attitude.pitch
-        let roll = data.attitude.roll
-        lastPitch = pitch
-        lastRoll = roll
+	/// 根据最新陀螺仪姿态计算屏幕坐标系中的偏移。
+	private func updateDeviceMotion(with data: CMDeviceMotion) {
+		// 将陀螺仪的俯仰/横滚角映射到屏幕上的二维偏移
+		let pitch = data.attitude.pitch
+		let roll = data.attitude.roll
+		lastPitch = pitch
+		lastRoll = roll
 
-        DispatchQueue.main.async {
-            self.deviceMotion = data
-        }
-    }
+		// 30Hz 发布足够顺滑；60Hz 会让 Combine 链路和主线程空转翻倍
+		let now = Date().timeIntervalSince1970
+		guard now - lastMotionPublishTime >= 0.033 else { return }
+		lastMotionPublishTime = now
+
+		DispatchQueue.main.async {
+			self.deviceMotion = data
+		}
+	}
 
     /// 记录一条加速度样本并裁剪窗口。
     private func appendAccSample(_ v: CMAcceleration) {
@@ -303,10 +296,14 @@ final class MotionStabilityMonitor: ObservableObject {
 		let hasLargeMotion = accMax > largeMotionAccThreshold || gyroMax > largeMotionGyroThreshold
 		
 		if hasLargeMotion {
-			DispatchQueue.main.async {
-				self.largeMotionDetected = true
-				// 重置标志，以便下次检测
+			// 仅在上升沿发布，避免持续运动期间每个节流周期都派发主线程 + 新建定时器
+			if !largeMotionFlag {
+				largeMotionFlag = true
+				DispatchQueue.main.async {
+					self.largeMotionDetected = true
+				}
 				DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+					self.largeMotionFlag = false
 					self.largeMotionDetected = false
 				}
 			}
@@ -333,15 +330,23 @@ final class MotionStabilityMonitor: ObservableObject {
         
         // 创建详细的调试信息，包含连续帧信息
         let debugText = "加速度: \(String(format: "%.3f", accStd))/\(String(format: "%.2f", accelerationStdThreshold)), 陀螺仪: \(String(format: "%.3f", gyroStd))/\(String(format: "%.2f", gyroStdThreshold)), 连续稳定: \(consecutiveStableFrames)"
-        
+
         #if DEBUG
         print("稳定性检测 - \(debugText), 整体稳定: \(overallStable)")
         #endif
-        
-        DispatchQueue.main.async { 
-            self.isStable = overallStable
+
+        // 只在稳定性翻转时发布，避免 20Hz 无条件主线程写入触发无效重渲
+        if overallStable != stableState {
+            stableState = overallStable
+            DispatchQueue.main.async {
+                self.isStable = overallStable
+            }
+        }
+        #if DEBUG
+        DispatchQueue.main.async {
             self.debugInfo = debugText
         }
+        #endif
     }
 }
 

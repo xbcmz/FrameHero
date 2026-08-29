@@ -102,9 +102,6 @@ final class CameraManager: NSObject, ObservableObject {
     /// 防止快速进入/退出时的竞态：stopSession 同步设为 false，startSession 在队列上检查此标志。
     var shouldBeRunning = false
 
-    /// 最新的像素缓冲，仅用于调试预览。
-    var lastPixelBuffer: CVPixelBuffer? = nil
-
     /// 初始化会话预设与视频输出 delegate。
     override init() {
         super.init()

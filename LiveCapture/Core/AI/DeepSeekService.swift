@@ -92,7 +92,26 @@ final class DeepSeekService: AIAdviceProvider {
                 }
                 return
             }
-            
+
+            // HTTP 状态码检查：401/429/5xx 之前全落进 parseFailed，
+            // invalidAPIKey/rateLimit/serverError 三个错误永远不会被构造
+            if let httpResponse = response as? HTTPURLResponse, httpResponse.statusCode != 200 {
+                let error: DeepSeekError
+                switch httpResponse.statusCode {
+                case 401, 403:
+                    error = .invalidAPIKey
+                case 429:
+                    error = .rateLimit
+                default:
+                    let body = String(data: data.prefix(300), encoding: .utf8) ?? ""
+                    error = .serverError("HTTP \(httpResponse.statusCode) \(body)")
+                }
+                DispatchQueue.main.async {
+                    completion(.failure(error))
+                }
+                return
+            }
+
             // 解析响应
             do {
                 let result = try self.parseResponse(data: data)
@@ -216,8 +235,14 @@ final class DeepSeekService: AIAdviceProvider {
             throw DeepSeekError.parseFailed
         }
         
+        // 先剔除给相机策略用的 ```json 代码块，否则 JSON 原文会被拼进建议文本展示给用户
+        var displayContent = content
+        if let blockRange = Self.cameraStrategyBlockRange(in: content) {
+            displayContent = content.replacingCharacters(in: blockRange, with: "")
+        }
+
         // 解析内容：第一行标题，中间建议，最后一行风格
-        let lines = content.components(separatedBy: .newlines)
+        let lines = displayContent.components(separatedBy: .newlines)
             .map { $0.trimmingCharacters(in: .whitespaces) }
             .filter { !$0.isEmpty }
         
@@ -258,7 +283,17 @@ final class DeepSeekService: AIAdviceProvider {
     }
     
     // MARK: - 相机参数 JSON 解析（Phase 5）
-    
+
+    /// 定位回复中 ```json ... ``` 代码块（含围栏标记）的整体范围
+    private static func cameraStrategyBlockRange(in content: String) -> Range<String.Index>? {
+        let pattern = #"```(?:json)?\s*\n?[\s\S]*?\n?```"#
+        guard let regex = try? NSRegularExpression(pattern: pattern, options: []),
+              let match = regex.firstMatch(in: content, range: NSRange(content.startIndex..., in: content)) else {
+            return nil
+        }
+        return Range(match.range, in: content)
+    }
+
     /// 从 AI 回复文本中提取 ```json``` 代码块并解析为相机策略
     private func parseCameraStrategy(from content: String) -> CameraStrategySuggestion? {
         // 提取 ```json ... ``` 代码块

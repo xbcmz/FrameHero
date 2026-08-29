@@ -12,6 +12,11 @@ final class CoreMLCropDetector {
     private let queue = DispatchQueue(label: "livecapture.coreml.queue", qos: .userInitiated)
     private let ciContext = CIContext(options: [.workingColorSpace: CGColorSpace(name: CGColorSpace.sRGB)!])
 
+    // 模型只在 init 时加载一次。原实现每次检测都重新实例化 MLModel，
+    // 造成数百毫秒级延迟和内存抖动。
+    private let bboxModel: MLModel?
+    private let actorModel: MLModel?
+
     private enum ModelLoadError: Error {
         case modelNotFound
         case compilationFailed
@@ -19,11 +24,13 @@ final class CoreMLCropDetector {
 
     init(mode: DetectionMode) {
         self.mode = mode
+        self.bboxModel = try? Self.loadBBoxModel(mode: mode)
+        self.actorModel = try? Self.loadActorModel(mode: mode)
     }
 
     // MARK: - Model Loading
 
-    private func loadBBoxModel() throws -> MLModel {
+    private static func loadBBoxModel(mode: DetectionMode) throws -> MLModel {
         let config = MLModelConfiguration()
         switch mode {
         case .fast:
@@ -35,7 +42,7 @@ final class CoreMLCropDetector {
         }
     }
 
-    private func loadActorModel() throws -> MLModel {
+    private static func loadActorModel(mode: DetectionMode) throws -> MLModel {
         let config = MLModelConfiguration()
         switch mode {
         case .fast:
@@ -145,23 +152,25 @@ final class CoreMLCropDetector {
         completion: @escaping (AestheticCrop?) -> Void
     ) {
         queue.async { [weak self] in
-            guard let self else { return }
+            guard let self, let bboxModel = self.bboxModel, let actorModel = self.actorModel else {
+                // 模型不可用时明确失败，让上层走重试逻辑。
+                // 绝不伪造"检测成功"的结果——否则自动拍摄会对着假目标倒计时拍照
+                completion(nil)
+                return
+            }
+
+            // Step 1: 预处理图像并运行 BBox 模型
+            guard let inputArray = self.pixelBufferToMLMultiArray(pixelBuffer) else {
+                completion(nil)
+                return
+            }
 
             do {
-                let bboxModel = try self.loadBBoxModel()
-                let actorModel = try self.loadActorModel()
-
-                // Step 1: 预处理图像并运行 BBox 模型
-                guard let inputArray = self.pixelBufferToMLMultiArray(pixelBuffer) else {
-                    self.fallbackResult(targetAspectRatio: targetAspectRatio, completion: completion)
-                    return
-                }
-
                 let bboxInput = try MLDictionaryFeatureProvider(dictionary: ["full_img": inputArray])
                 let bboxOutput = try bboxModel.prediction(from: bboxInput)
 
                 guard let bboxArray = bboxOutput.featureValue(for: "bbox")?.multiArrayValue else {
-                    self.fallbackResult(targetAspectRatio: targetAspectRatio, completion: completion)
+                    completion(nil)
                     return
                 }
 
@@ -170,12 +179,12 @@ final class CoreMLCropDetector {
                 // Step 2: 裁切并运行 Actor 模型
                 guard let cropBuffer = self.cropPixelBuffer(pixelBuffer, bbox: bbox),
                       let cropArray = self.pixelBufferToMLMultiArray(cropBuffer) else {
-                    self.fallbackResult(targetAspectRatio: targetAspectRatio, completion: completion)
+                    completion(nil)
                     return
                 }
 
                 guard let stateArray = try? MLMultiArray(shape: [1, 4], dataType: .float16) else {
-                    self.fallbackResult(targetAspectRatio: targetAspectRatio, completion: completion)
+                    completion(nil)
                     return
                 }
                 for i in 0..<4 { stateArray[i] = NSNumber(value: bbox[i]) }
@@ -187,7 +196,7 @@ final class CoreMLCropDetector {
                 let actorOutput = try actorModel.prediction(from: actorInput)
 
                 guard let actionArray = actorOutput.featureValue(for: "action_probs")?.multiArrayValue else {
-                    self.fallbackResult(targetAspectRatio: targetAspectRatio, completion: completion)
+                    completion(nil)
                     return
                 }
 
@@ -195,7 +204,7 @@ final class CoreMLCropDetector {
 
                 // Step 3: 选择最佳动作并映射到裁切调整
                 guard let maxIndex = actionProbs.indices.max(by: { actionProbs[$0] < actionProbs[$1] }) else {
-                    self.fallbackResult(targetAspectRatio: targetAspectRatio, completion: completion)
+                    completion(nil)
                     return
                 }
 
@@ -207,9 +216,8 @@ final class CoreMLCropDetector {
 
                 let detectionType = "Adacrop \(self.mode == .fast ? "Fast" : "Pro")"
                 completion(AestheticCrop(rect: finalRect, confidence: actionProbs[maxIndex], detectionType: detectionType))
-
             } catch {
-                self.fallbackResult(targetAspectRatio: targetAspectRatio, completion: completion)
+                completion(nil)
             }
         }
     }
@@ -276,20 +284,6 @@ final class CoreMLCropDetector {
         }
 
         return result
-    }
-
-    /// 模型加载或推理失败时返回中心裁切
-    private func fallbackResult(targetAspectRatio: CGFloat, completion: @escaping (AestheticCrop?) -> Void) {
-        let maxSize: CGFloat = 0.75
-        var width: CGFloat = maxSize
-        var height: CGFloat = maxSize
-        if targetAspectRatio >= 1 {
-            height = width / targetAspectRatio
-        } else {
-            width = height * targetAspectRatio
-        }
-        let rect = CGRect(x: 0.5 - width / 2, y: 0.5 - height / 2, width: width, height: height)
-        completion(AestheticCrop(rect: rect, confidence: 0.3, detectionType: "CoreML-回退"))
     }
 }
 

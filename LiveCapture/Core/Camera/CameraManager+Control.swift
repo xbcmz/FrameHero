@@ -527,44 +527,43 @@ extension CameraManager {
     
     /// 将色温（开尔文）转换为 AVCaptureDevice.WhiteBalanceGains
     ///
-    /// 这是一个简化的近似计算，基于普朗克黑体辐射曲线。
-    /// 实际应用中可以用更精确的色彩科学算法。
+    /// 基于 Tanner-Helland 黑体辐射近似计算光源颜色，
+    /// 再取倒数（中和该光源所需的增益）并归一化到最小增益 1.0。
+    /// 注意：该公式的历史域是「百开尔文」（Kelvin/100），必须先换算。
     private func whiteBalanceGains(
         forTemperature temperature: Float,
         device: AVCaptureDevice
     ) -> AVCaptureDevice.WhiteBalanceGains {
-        // 简化计算：
-        // 低色温（暖光）→ 红增益高，蓝增益低
-        // 高色温（冷光）→ 红增益低，蓝增益高
-        
-        let temp = Double(temperature)
-        
-        // 基于经验公式的近似
-        // 参考：https://stackoverflow.com/questions/18326597/
-        var red: Double = 1.0
-        var green: Double = 1.0
-        var blue: Double = 1.0
-        
-        if temp <= 6600 {
-            red = 1.0
-            green = 0.3900815787690196 * log(temp) - 0.6318414437886275
-            blue = temp <= 1900 ? 0.0 : 0.5432067891400797 * log(temp - 100) - 1.186218978927825
+        let temp = Double(min(max(temperature, 1500), 15000)) / 100.0
+
+        // 光源的归一化 RGB（6500K ≈ 纯白）
+        var r: Double
+        var g: Double
+        var b: Double
+        if temp <= 66 {
+            r = 1.0
+            g = min(max(0.3900815787690196 * log(temp) - 0.6318414437886275, 0), 1)
+            b = temp <= 19 ? 0 : min(max(0.5432067891400797 * log(temp - 10) - 1.19625408914, 0), 1)
         } else {
-            red = 1.292936186062745 * pow(temp / 100 - 60, -0.1332047592)
-            green = 1.129890870881635 * pow(temp / 100 - 60, -0.0755148492)
-            blue = 1.0
+            r = min(max(1.292936186062745 * pow(temp - 60, -0.1332047592), 0), 1)
+            g = min(max(1.129890870881635 * pow(temp - 60, -0.0755148492), 0), 1)
+            b = 1.0
         }
-        
-        // 钳位到合法范围
-        let maxGain = device.maxWhiteBalanceGain
-        red = min(max(red, 1.0), Double(maxGain))
-        green = min(max(green, 1.0), Double(maxGain))
-        blue = min(max(blue, 1.0), Double(maxGain))
-        
+
+        // 中和光源：增益与光源通道强度成反比，归一化使最小增益为 1
+        var red = 1.0 / max(r, 0.05)
+        var green = 1.0 / max(g, 0.05)
+        var blue = 1.0 / max(b, 0.05)
+        let minGain = min(red, green, blue)
+        red /= minGain
+        green /= minGain
+        blue /= minGain
+
+        let maxGain = Double(device.maxWhiteBalanceGain)
         return AVCaptureDevice.WhiteBalanceGains(
-            redGain: Float(red),
-            greenGain: Float(green),
-            blueGain: Float(blue)
+            redGain: Float(min(max(red, 1.0), maxGain)),
+            greenGain: Float(min(max(green, 1.0), maxGain)),
+            blueGain: Float(min(max(blue, 1.0), maxGain))
         )
     }
 }

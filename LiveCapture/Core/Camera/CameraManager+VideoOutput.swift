@@ -55,13 +55,12 @@ import AVFoundation
 
 extension CameraManager: AVCaptureVideoDataOutputSampleBufferDelegate {
     /// 视频帧输出回调，将稳定后的画面传递给上层管线。
+    /// 注意：绝不能在这里持有 sampleBuffer/pixelBuffer 的强引用，
+    /// 否则会阻碍缓冲池回收，直接导致丢帧。
     func captureOutput(_ output: AVCaptureOutput,
                        didOutput sampleBuffer: CMSampleBuffer,
                        from connection: AVCaptureConnection) {
         guard output === videoOutput else { return }
-        if let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) {
-            lastPixelBuffer = pixelBuffer
-        }
         onSampleBuffer?(sampleBuffer)
     }
 

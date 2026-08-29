@@ -31,10 +31,14 @@ extension CameraManager: AVCapturePhotoCaptureDelegate {
             DispatchQueue.main.async { self.lastPhotoSaved = false }
             return
         }
-        onPhotoDataReady?(data)
+        // 取景器/构图网格都是 3:4，直接保存原始 4:3 会导致"所拍非所得"。
+        // 裁剪到 3:4（失败时回退原始数据），并保留原图 EXIF 参数
+        let finalData = processPhotoData(photo: photo, originalData: data) ?? data
+        onPhotoDataReady?(finalData)
         DispatchQueue.main.async { self.lastPhotoSaved = true }
     }
 
+    /// 将照片裁剪为与取景器一致的 3:4，并把原始 EXIF/TIFF 元数据合并进新 JPEG。
     func processPhotoData(photo: AVCapturePhoto, originalData: Data) -> Data? {
         guard let pixelBuffer = photo.pixelBuffer,
               let croppedBuffer = cropPixelBufferToThreeByFour(pixelBuffer,
@@ -42,7 +46,31 @@ extension CameraManager: AVCapturePhotoCaptureDelegate {
               let jpegData = jpegData(from: croppedBuffer) else {
             return nil
         }
-        return jpegData
+        return Self.mergingEXIF(from: originalData, into: jpegData)
+    }
+
+    /// 把原始照片的 EXIF/TIFF 元数据（ISO、快门、光圈、机型等）合并进裁剪后的 JPEG。
+    /// 裁剪后图像已是直立方向，需剔除原图的 orientation/像素尺寸字段避免二次旋转。
+    private static func mergingEXIF(from originalData: Data, into croppedJPEG: Data) -> Data? {
+        guard let croppedSource = CGImageSourceCreateWithData(croppedJPEG as CFData, nil),
+              let originalSource = CGImageSourceCreateWithData(originalData as CFData, nil),
+              let originalProps = CGImageSourceCopyPropertiesAtIndex(originalSource, 0, nil)
+                  as? [String: Any] else {
+            return nil
+        }
+
+        var props = originalProps
+        props[kCGImagePropertyOrientation as String] = nil
+        props[kCGImagePropertyPixelWidth as String] = nil
+        props[kCGImagePropertyPixelHeight as String] = nil
+
+        let outData = NSMutableData()
+        guard let destination = CGImageDestinationCreateWithData(outData, "public.jpeg" as CFString, 1, nil) else {
+            return nil
+        }
+        CGImageDestinationAddImageFromSource(destination, croppedSource, 0, props as CFDictionary)
+        guard CGImageDestinationFinalize(destination) else { return nil }
+        return outData as Data
     }
 
     func cropPixelBufferToThreeByFour(_ pixelBuffer: CVPixelBuffer,

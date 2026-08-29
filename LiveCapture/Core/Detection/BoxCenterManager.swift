@@ -213,9 +213,15 @@ final class BoxCenterManager: ObservableObject {
 		currentCenterInView = center
 		referenceAttitude = attitude
 		offsetSmoother.reset(to: CGPoint.zero)
-		
+
 		velocityHistory.removeAll()
 		lastAngularVelocity = .zero
+
+		// 必须清除上一轮的对齐/锁定状态：否则若此前曾自动锁定（对齐 1 秒即锁），
+		// 新基准点会被立即钉死在屏幕中心，isAlignedWithCenter 恒真，
+		// 自动拍摄将无视真实画面是否偏移而误触发
+		alignedStartTime = nil
+		isLockedToCenter = false
 	}
 
 	/// 重置所有中心点状态。

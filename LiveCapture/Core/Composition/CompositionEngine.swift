@@ -542,19 +542,21 @@ final class CompositionEngine {
         let x = subject.centerX
         let y = subject.centerY
 
+        // 方向语义统一为「手机应该往哪移」（与 MoveDirection.displayName 一致）：
+        // 手机往右移 → 画面内容相对往左移；要主体在画面中右移，手机需往左移。
         // 判断主要调整方向
         // 优先看边缘距离问题（太靠边的话先解决）
         if subject.minX < minAcceptableEdgeMargin {
-            return .moveRight  // 人物太靠左 → 手机往右移（让人物往右走）
+            return .moveLeft   // 人物太靠左 → 手机往左移，画面内容右移把人物带回来
         }
         if subject.maxX > 1.0 - minAcceptableEdgeMargin {
-            return .moveLeft   // 人物太靠右 → 手机往左移
+            return .moveRight  // 人物太靠右 → 手机往右移
         }
         if subject.minY < minAcceptableEdgeMargin {
-            return .moveUp     // 人物太靠下 → 手机往上移
+            return .moveDown   // 人物太靠下（脚被裁）→ 手机往下移，画面内容上移
         }
         if subject.maxY > 1.0 - minAcceptableEdgeMargin {
-            return .moveDown   // 人物太靠上 → 手机往下移
+            return .moveUp     // 人物太靠上（头被裁）→ 手机往上移
         }
 
         // 边缘没问题，看位置优化
@@ -578,16 +580,16 @@ final class CompositionEngine {
         if xDeviation > yDeviation {
             // X 方向偏差更大
             if x < 0.5 {
-                return .moveRight  // 人物偏左 → 手机右移
+                return .moveLeft   // 人物偏左 → 手机左移
             } else {
-                return .moveLeft   // 人物偏右 → 手机左移
+                return .moveRight  // 人物偏右 → 手机右移
             }
         } else {
-            // Y 方向偏差更大
+            // Y 方向偏差更大（注意：检测坐标 Y 轴向上，y 小 = 画面下方）
             if y < 0.5 {
-                return .moveUp     // 人物偏下 → 手机上移
+                return .moveDown   // 人物偏下 → 手机下移，内容上移
             } else {
-                return .moveDown   // 人物偏上 → 手机下移
+                return .moveUp     // 人物偏上 → 手机上移，内容下移
             }
         }
     }
