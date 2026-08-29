@@ -17,19 +17,13 @@
 //  - isScaled: Bool - 是否处于缩放状态
 //  - action: () -> Void - 点击回调
 //
-//  ## UI 设计
-//  双圆环设计：
-//  - 外层大圆：
-//    - 直径 84pt
-//    - 白色渐变描边（6pt 宽度）
-//    - 顶部到底部渐变透明度
-//    - 外发光阴影效果
-//  
-//  - 内层圆：
-//    - 直径 70pt
-//    - 放射状渐变填充
-//    - 从中心向外透明度递减
-//    - 底部投影
+//  ## UI 设计（2026-08 重设计）
+//  细白外环 + 品牌渐变内圆：
+//  - 外环：直径 84pt，白色细描边（3pt），与内圆留呼吸缝隙
+//  - 内圆：直径 68pt，蓝→紫品牌渐变（primaryGradient，与
+//    首页大按钮/AI 入口同款），顶部高光增加玻璃质感
+//  - 倒计时：最外圈绿色进度环 + 白色剩余秒数
+//  - 达标：绿色呼吸脉冲外圈
 //
 //  ## 交互效果
 //  - 按下时缩放到 0.95
@@ -71,60 +65,52 @@ struct CaptureButton: View {
 				if isAchieved {
 					Circle()
 						.stroke(Color.green.opacity(achievedPulse ? 0.85 : 0.25), lineWidth: 3)
-						.frame(width: 96, height: 96)
-						.scaleEffect(achievedPulse ? 1.04 : 0.98)
+						.frame(width: 98, height: 98)
+						.scaleEffect(achievedPulse ? 1.05 : 0.97)
 						.onAppear { achievedPulse = true }
 						.animation(.easeInOut(duration: 0.7).repeatForever(autoreverses: true), value: achievedPulse)
 				}
 
-				// 倒计时进度环（贴外圈，随时间消耗）
+				// 倒计时进度环（最外圈，随时间消耗）
 				if let progress = countdownProgress {
 					Circle()
 						.trim(from: 0, to: max(0.001, progress))
-						.stroke(Color.green, style: StrokeStyle(lineWidth: 5, lineCap: .round))
-						.frame(width: 92, height: 92)
+						.stroke(Color.green, style: StrokeStyle(lineWidth: 4, lineCap: .round))
+						.frame(width: 94, height: 94)
 						.rotationEffect(.degrees(-90))
-						.shadow(color: .green.opacity(0.5), radius: 4)
+						.shadow(color: .green.opacity(0.55), radius: 4)
 						.animation(.linear(duration: 0.1), value: progress)
 				}
 
-				// 外层大圆
+				// 外圈细环（留出与内圆的呼吸缝隙，经典相机造型）
 				Circle()
-					.strokeBorder(
-						LinearGradient(
-							colors: [
-								Color.white,
-								Color.white.opacity(0.8)
-							],
-							startPoint: .top,
-							endPoint: .bottom
-						),
-						lineWidth: 6
-					)
+					.stroke(Color.white, lineWidth: 3)
 					.frame(width: 84, height: 84)
-					.shadow(color: .white.opacity(0.4), radius: 10, y: 0)
+					.shadow(color: .black.opacity(0.35), radius: 6, y: 2)
 
-				// 内层圆
+				// 内圆：品牌渐变（与首页/AI 入口同款蓝紫）
+				Circle()
+					.fill(DesignSystem.Colors.primaryGradient)
+					.frame(width: 68, height: 68)
+					.shadow(color: DesignSystem.Colors.primary.opacity(0.45), radius: 8, y: 2)
+
+				// 内圆顶部高光，增加玻璃质感
 				Circle()
 					.fill(
-						RadialGradient(
-							colors: [
-								Color.white.opacity(0.9),
-								Color.white.opacity(0.3)
-							],
-							center: .center,
-							startRadius: 10,
-							endRadius: 35
+						LinearGradient(
+							colors: [.white.opacity(0.32), .clear],
+							startPoint: .top,
+							endPoint: .center
 						)
 					)
-					.frame(width: 70, height: 70)
-					.shadow(color: .black.opacity(0.3), radius: 8, y: 4)
+					.frame(width: 68, height: 68)
 
-				// 倒计时剩余数字
+				// 倒计时剩余数字（白字压渐变，清晰醒目）
 				if let left = countdownSecondsLeft, left > 0 {
 					Text("\(left)")
-						.font(.system(size: 26, weight: .bold, design: .rounded))
-						.foregroundColor(.black.opacity(0.85))
+						.font(.system(size: 30, weight: .bold, design: .rounded))
+						.foregroundColor(.white)
+						.shadow(color: .black.opacity(0.3), radius: 2, x: 0, y: 1)
 				}
 			}
 		}
