@@ -218,7 +218,12 @@ final class CaptureViewModel: ObservableObject {
 	
 	@Published private(set) var photographyAnalysis: PhotographyAnalysisResult?
 	@Published private(set) var isPhotographyAnalyzing: Bool = false
-	@Published var isPhotographyAdviceEnabled: Bool = false  // AI 建议开关（默认关闭，用户主动开启）
+	/// 是否在拍摄页显示 AI 建议（全局设置）。
+	/// 开关在「设置 → AI 助手」里（AppStorage key: aiAdviceEnabled），
+	/// 这里按 VM 创建时读取一次——CaptureView 每次全屏弹出都会新建 VM，
+	/// 设置页的改动自然带到下一次拍摄会话。
+	@Published private(set) var isPhotographyAdviceEnabled: Bool =
+		UserDefaults.standard.bool(forKey: "aiAdviceEnabled")
 	
 	// MARK: - 构图引导（AI 目标 + 实时导航）
 	

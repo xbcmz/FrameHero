@@ -54,19 +54,13 @@ final class DeepSeekService: AIAdviceProvider {
 
     // MARK: - 连接测试
 
-    /// 连接测试结果
-    enum ConnectionTestResult {
-        /// 成功，附带往返延迟（秒）
-        case success(latency: TimeInterval)
-    }
-
     /// 测试 AI 服务连通性（设置页用）。
     /// 用 GET /models 鉴权 + 测可达性，不消耗 token。
-    /// - Parameter completion: 主线程回调；成功返回往返延迟
+    /// - Parameter completion: 主线程回调；成功返回往返延迟（秒）
     static func testConnection(
         apiKey: String,
         baseURL: String,
-        completion: @escaping (Result<ConnectionTestResult, Error>) -> Void
+        completion: @escaping (Result<TimeInterval, Error>) -> Void
     ) {
         var trimmed = baseURL.trimmingCharacters(in: .whitespacesAndNewlines)
         if trimmed.hasSuffix("/") { trimmed.removeLast() }
@@ -104,7 +98,7 @@ final class DeepSeekService: AIAdviceProvider {
             switch httpResponse.statusCode {
             case 200:
                 DispatchQueue.main.async {
-                    completion(.success(.success(latency: latency)))
+                    completion(.success(latency))
                 }
             case 401, 403:
                 DispatchQueue.main.async {

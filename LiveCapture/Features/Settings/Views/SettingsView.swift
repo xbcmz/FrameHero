@@ -8,12 +8,11 @@ struct SettingsView: View {
 
     // AI 配置（Key 存 Keychain，其余存 UserDefaults）
     @ObservedObject private var aiConfig = AIConfigurationStore.shared
+    @AppStorage("aiAdviceEnabled") private var aiAdviceEnabled: Bool = false
     @State private var apiKeyDraft: String = ""
     @State private var showAPIKey: Bool = false
     @State private var showAdvancedAI: Bool = false
     @State private var isTestingConnection: Bool = false
-    @State private var connectionTestMessage: String?
-    @State private var connectionTestSucceeded: Bool?
 
     var body: some View {
         NavigationStack {
@@ -152,14 +151,28 @@ struct SettingsView: View {
 
     // MARK: - AI Section
 
-    /// 当前生效的 AI 通道描述（云端 DeepSeek / 本地模拟）
-    private var activeAIDescription: String {
-        if aiConfig.isCloudConfigured {
-            let modelName = AIConfigurationStore.availableModels
-                .first { $0.id == aiConfig.model }?.name ?? aiConfig.model
-            return "云端 DeepSeek · \(modelName)"
+    /// 统一卡片背景（全区块共用，避免嵌套卡片）
+    private var cardBackground: some View {
+        RoundedRectangle(cornerRadius: DesignSystem.CornerRadius.medium)
+            .fill(DesignSystem.Colors.backgroundSecondary)
+    }
+
+    /// 主开关下方的状态行（连接状态摘要）
+    private var aiStatus: (text: String, color: Color) {
+        if !aiConfig.cloudAIEnabled {
+            return ("已关闭 · 使用本地模拟建议", DesignSystem.Colors.textTertiary)
         }
-        return aiConfig.cloudAIEnabled ? "本地模拟（未配置 API Key）" : "本地模拟（云端已关闭）"
+        guard aiConfig.effectiveAPIKey != nil else {
+            return ("未配置 API Key · 在高级设置中配置", DesignSystem.Colors.warning)
+        }
+        switch aiConfig.lastConnectionTest {
+        case .success(let latency):
+            return (String(format: "已连接 · %.0f ms", latency * 1000), DesignSystem.Colors.success)
+        case .failure(let message):
+            return ("连接失败 · \(message)", DesignSystem.Colors.error)
+        case nil:
+            return ("已配置 · 连接未测试", DesignSystem.Colors.textTertiary)
+        }
     }
 
     private var aiSection: some View {
@@ -168,49 +181,154 @@ struct SettingsView: View {
                 .font(DesignSystem.Typography.title3)
                 .foregroundColor(DesignSystem.Colors.textPrimary)
 
+            // 主卡片：用户关心的三件事——总开关 / 模型 / 拍摄辅助
             VStack(spacing: 0) {
-                // 云端开关
+                masterToggleRow
+
+                Divider()
+                    .background(DesignSystem.Colors.backgroundSecondary)
+
+                modelRow
+
+                Divider()
+                    .background(DesignSystem.Colors.backgroundSecondary)
+
                 ToggleRow(
-                    icon: "sparkles",
-                    title: "云端 AI 建议",
-                    description: activeAIDescription,
-                    isOn: $aiConfig.cloudAIEnabled
+                    icon: "lightbulb",
+                    title: "拍摄时给出 AI 建议",
+                    description: "拍摄页顶部显示构图评分与改进建议",
+                    isOn: $aiAdviceEnabled
                 )
-
-                Divider()
-                    .background(DesignSystem.Colors.backgroundSecondary)
-
-                // API Key
-                apiKeyRow
-
-                Divider()
-                    .background(DesignSystem.Colors.backgroundSecondary)
-
-                // 模型选择
-                modelPickerRow
-
-                Divider()
-                    .background(DesignSystem.Colors.backgroundSecondary)
-
-                // 连接测试
-                connectionTestRow
             }
-            .background(
-                RoundedRectangle(cornerRadius: DesignSystem.CornerRadius.medium)
-                    .fill(DesignSystem.Colors.backgroundSecondary)
-            )
+            .background(cardBackground)
 
-            // 高级设置
+            // 技术配置收纳进高级设置，默认收起
             advancedAISection
 
-            Text("API Key 存储在系统 Keychain 中，不会明文写入文件。可在 platform.deepseek.com 申请。")
+            Text("未配置 API Key 时自动使用本地模拟建议。Key 在 platform.deepseek.com 申请，保存在系统 Keychain。")
                 .font(DesignSystem.Typography.caption1)
                 .foregroundColor(DesignSystem.Colors.textTertiary)
                 .lineSpacing(3)
         }
     }
 
-    // MARK: API Key 输入行
+    // MARK: 主开关行
+
+    private var masterToggleRow: some View {
+        let status = aiStatus
+        return HStack(spacing: 12) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 10)
+                    .fill(DesignSystem.Colors.primaryGradient)
+                Image(systemName: "sparkles")
+                    .font(.system(size: 19, weight: .semibold))
+                    .foregroundColor(.white)
+            }
+            .frame(width: 44, height: 44)
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text("AI 拍摄助手")
+                    .font(DesignSystem.Typography.headline)
+                    .foregroundColor(DesignSystem.Colors.textPrimary)
+                Text(status.text)
+                    .font(DesignSystem.Typography.caption1)
+                    .foregroundColor(status.color)
+                    .lineLimit(1)
+            }
+
+            Spacer()
+
+            Toggle("", isOn: $aiConfig.cloudAIEnabled)
+                .labelsHidden()
+                .tint(DesignSystem.Colors.primary)
+        }
+        .padding(.vertical, 14)
+        .padding(.horizontal, DesignSystem.Spacing.medium)
+    }
+
+    // MARK: 模型行
+
+    private var modelRow: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 10) {
+                Image(systemName: "cpu")
+                    .font(.system(size: 15))
+                    .foregroundColor(DesignSystem.Colors.primary)
+                    .frame(width: 24)
+                Text("建议模型")
+                    .font(DesignSystem.Typography.headline)
+                    .foregroundColor(DesignSystem.Colors.textPrimary)
+                Spacer()
+                Picker("模型", selection: $aiConfig.model) {
+                    ForEach(AIConfigurationStore.availableModels, id: \.id) { info in
+                        Text(info.name).tag(info.id)
+                    }
+                }
+                .pickerStyle(.menu)
+            }
+
+            Text(AIConfigurationStore.availableModels
+                .first { $0.id == aiConfig.model }?.description ?? "")
+                .font(DesignSystem.Typography.caption1)
+                .foregroundColor(DesignSystem.Colors.textTertiary)
+                .padding(.leading, 34)
+        }
+        .padding(.vertical, 14)
+        .padding(.horizontal, DesignSystem.Spacing.medium)
+        .disabled(!aiConfig.cloudAIEnabled)
+        .opacity(aiConfig.cloudAIEnabled ? 1.0 : 0.4)
+    }
+
+    // MARK: 高级设置（API Key / 连接测试 / 接口地址）
+
+    private var advancedAISection: some View {
+        VStack(alignment: .leading, spacing: DesignSystem.Spacing.small) {
+            Button {
+                HapticManager.shared.light()
+                withAnimation(DesignSystem.Animation.smooth) {
+                    showAdvancedAI.toggle()
+                }
+            } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: "gearshape.2")
+                        .font(.system(size: 13))
+                        .foregroundColor(DesignSystem.Colors.textTertiary)
+                    Text("高级设置")
+                        .font(DesignSystem.Typography.subheadline)
+                        .foregroundColor(DesignSystem.Colors.textSecondary)
+                    Text("API Key · 连接测试 · 接口地址")
+                        .font(DesignSystem.Typography.caption1)
+                        .foregroundColor(DesignSystem.Colors.textTertiary)
+                    Spacer()
+                    Image(systemName: "chevron.down")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundColor(DesignSystem.Colors.textTertiary)
+                        .rotationEffect(.degrees(showAdvancedAI ? 180 : 0))
+                }
+            }
+            .buttonStyle(.plain)
+
+            if showAdvancedAI {
+                VStack(spacing: 0) {
+                    apiKeyRow
+
+                    Divider()
+                        .background(DesignSystem.Colors.backgroundSecondary)
+
+                    connectionTestRow
+
+                    Divider()
+                        .background(DesignSystem.Colors.backgroundSecondary)
+
+                    baseURLRow
+                }
+                .background(cardBackground)
+                .transition(.opacity.combined(with: .move(edge: .top)))
+            }
+        }
+    }
+
+    // MARK: API Key 行（高级）
 
     private var apiKeyDraftChanged: Bool {
         apiKeyDraft.trimmingCharacters(in: .whitespacesAndNewlines) != aiConfig.apiKey
@@ -237,7 +355,6 @@ struct SettingsView: View {
                         HapticManager.shared.light()
                         aiConfig.setAPIKey("")
                         apiKeyDraft = ""
-                        connectionTestMessage = nil
                     }
                     .font(DesignSystem.Typography.footnote)
                     .foregroundColor(DesignSystem.Colors.error)
@@ -277,7 +394,6 @@ struct SettingsView: View {
                     let trimmed = apiKeyDraft.trimmingCharacters(in: .whitespacesAndNewlines)
                     aiConfig.setAPIKey(trimmed)
                     apiKeyDraft = trimmed
-                    connectionTestMessage = nil
                     HapticManager.shared.success()
                 }
                 .font(DesignSystem.Typography.footnote.weight(.semibold))
@@ -290,184 +406,113 @@ struct SettingsView: View {
         .padding(.horizontal, DesignSystem.Spacing.medium)
     }
 
-    // MARK: 模型选择行
-
-    private var modelPickerRow: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 10) {
-                Image(systemName: "cpu")
-                    .font(.system(size: 15))
-                    .foregroundColor(DesignSystem.Colors.primary)
-                    .frame(width: 24)
-                Text("模型")
-                    .font(DesignSystem.Typography.headline)
-                    .foregroundColor(DesignSystem.Colors.textPrimary)
-                Spacer()
-                Text(aiConfig.model)
-                    .font(DesignSystem.Typography.monoCaption)
-                    .foregroundColor(DesignSystem.Colors.textTertiary)
-            }
-
-            Picker("模型", selection: $aiConfig.model) {
-                ForEach(AIConfigurationStore.availableModels, id: \.id) { info in
-                    Text(info.name).tag(info.id)
-                }
-            }
-            .pickerStyle(.segmented)
-
-            Text(AIConfigurationStore.availableModels
-                .first { $0.id == aiConfig.model }?.description ?? "")
-                .font(DesignSystem.Typography.caption1)
-                .foregroundColor(DesignSystem.Colors.textTertiary)
-        }
-        .padding(.vertical, 14)
-        .padding(.horizontal, DesignSystem.Spacing.medium)
-    }
-
-    // MARK: 连接测试行
+    // MARK: 连接测试行（高级）
 
     private var connectionTestRow: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 10) {
-                Image(systemName: "antenna.radiowaves.left.and.right")
-                    .font(.system(size: 15))
-                    .foregroundColor(DesignSystem.Colors.primary)
-                    .frame(width: 24)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("连接测试")
-                        .font(DesignSystem.Typography.headline)
-                        .foregroundColor(DesignSystem.Colors.textPrimary)
-                    Text("验证 Key 与接口地址是否可用")
-                        .font(DesignSystem.Typography.caption1)
-                        .foregroundColor(DesignSystem.Colors.textTertiary)
-                }
-                Spacer()
-
-                Button {
-                    testAIConnection()
-                } label: {
-                    HStack(spacing: 6) {
-                        if isTestingConnection {
-                            ProgressView()
-                                .controlSize(.small)
-                        }
-                        Text(isTestingConnection ? "测试中" : "开始测试")
-                    }
-                    .font(DesignSystem.Typography.footnote.weight(.semibold))
-                    .foregroundColor(.white)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 7)
-                    .background(
-                        Capsule().fill(aiConfig.isCloudConfigured
-                            ? DesignSystem.Colors.primary
-                            : DesignSystem.Colors.textTertiary.opacity(0.4))
-                    )
-                }
-                .disabled(isTestingConnection || !aiConfig.isCloudConfigured)
+        HStack(spacing: 10) {
+            Image(systemName: "antenna.radiowaves.left.and.right")
+                .font(.system(size: 15))
+                .foregroundColor(DesignSystem.Colors.primary)
+                .frame(width: 24)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("连接测试")
+                    .font(DesignSystem.Typography.headline)
+                    .foregroundColor(DesignSystem.Colors.textPrimary)
+                Text("验证 Key 与接口地址是否可用")
+                    .font(DesignSystem.Typography.caption1)
+                    .foregroundColor(DesignSystem.Colors.textTertiary)
             }
+            Spacer()
 
-            if let message = connectionTestMessage {
+            Button {
+                testAIConnection()
+            } label: {
                 HStack(spacing: 6) {
-                    Image(systemName: connectionTestSucceeded == true
-                        ? "checkmark.circle.fill" : "xmark.circle.fill")
-                        .font(.system(size: 13))
-                        .foregroundColor(connectionTestSucceeded == true
-                            ? DesignSystem.Colors.success : DesignSystem.Colors.error)
-                    Text(message)
-                        .font(DesignSystem.Typography.caption1)
-                        .foregroundColor(DesignSystem.Colors.textSecondary)
+                    if isTestingConnection {
+                        ProgressView()
+                            .controlSize(.small)
+                            .tint(.white)
+                    }
+                    Text(isTestingConnection ? "测试中" : "开始测试")
                 }
+                .font(DesignSystem.Typography.footnote.weight(.semibold))
+                .foregroundColor(.white)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 7)
+                .background(
+                    Capsule().fill(aiConfig.isCloudConfigured
+                        ? DesignSystem.Colors.primary
+                        : DesignSystem.Colors.textTertiary.opacity(0.4))
+                )
             }
+            .disabled(isTestingConnection || !aiConfig.isCloudConfigured)
         }
         .padding(.vertical, 14)
         .padding(.horizontal, DesignSystem.Spacing.medium)
     }
 
-    /// 发起连接测试（GET /models，鉴权 + 可达性，不消耗 token）
+    /// 发起连接测试（GET /models，鉴权 + 可达性，不消耗 token），
+    /// 结果写入 aiConfig.lastConnectionTest，主卡片的状态行同步更新
     private func testAIConnection() {
         guard let key = aiConfig.effectiveAPIKey else { return }
         isTestingConnection = true
-        connectionTestMessage = nil
         HapticManager.shared.light()
 
         DeepSeekService.testConnection(apiKey: key, baseURL: aiConfig.baseURL) { result in
             isTestingConnection = false
             switch result {
-            case .success(.success(let latency)):
-                connectionTestSucceeded = true
-                connectionTestMessage = String(format: "连接成功 · %.0f ms", latency * 1000)
+            case .success(let latency):
+                aiConfig.lastConnectionTest = .success(latency: latency)
                 HapticManager.shared.success()
             case .failure(let error):
-                connectionTestSucceeded = false
-                connectionTestMessage = error.localizedDescription
+                aiConfig.lastConnectionTest = .failure(message: error.localizedDescription)
                 HapticManager.shared.warning()
             }
         }
     }
 
-    // MARK: 高级设置
+    // MARK: 接口地址行（高级）
 
-    private var advancedAISection: some View {
-        VStack(alignment: .leading, spacing: DesignSystem.Spacing.small) {
-            Button {
-                withAnimation(DesignSystem.Animation.smooth) {
-                    showAdvancedAI.toggle()
-                }
-            } label: {
-                HStack {
-                    Label("高级设置", systemImage: "gearshape.2")
+    private var baseURLRow: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 10) {
+                Image(systemName: "globe")
+                    .font(.system(size: 15))
+                    .foregroundColor(DesignSystem.Colors.primary)
+                    .frame(width: 24)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("接口地址")
                         .font(DesignSystem.Typography.headline)
-                        .foregroundColor(DesignSystem.Colors.textSecondary)
-                    Spacer()
-                    Image(systemName: "chevron.down")
-                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundColor(DesignSystem.Colors.textPrimary)
+                    Text("缺路径时自动补 /chat/completions")
+                        .font(DesignSystem.Typography.caption1)
                         .foregroundColor(DesignSystem.Colors.textTertiary)
-                        .rotationEffect(.degrees(showAdvancedAI ? 180 : 0))
                 }
-            }
-            .buttonStyle(.plain)
-
-            if showAdvancedAI {
-                VStack(alignment: .leading, spacing: 12) {
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text("接口地址（Base URL）")
-                            .font(DesignSystem.Typography.footnote)
-                            .foregroundColor(DesignSystem.Colors.textSecondary)
-                        TextField(AIConfigurationStore.defaultBaseURL, text: $aiConfig.baseURL)
-                            .keyboardType(.URL)
-                            .textInputAutocapitalization(.never)
-                            .autocorrectionDisabled()
-                            .font(DesignSystem.Typography.monoCaption)
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 8)
-                            .background(
-                                RoundedRectangle(cornerRadius: DesignSystem.CornerRadius.small)
-                                    .fill(DesignSystem.Colors.backgroundTertiary)
-                            )
-                        Text("缺路径时自动补 /chat/completions，可填自建代理或中转地址")
-                            .font(DesignSystem.Typography.caption1)
-                            .foregroundColor(DesignSystem.Colors.textTertiary)
-                    }
-
-                    Button {
+                Spacer()
+                if aiConfig.baseURL != AIConfigurationStore.defaultBaseURL {
+                    Button("恢复默认") {
                         HapticManager.shared.light()
-                        aiConfig.resetAdvancedSettings()
-                    } label: {
-                        Label("恢复默认", systemImage: "arrow.counterclockwise")
-                            .font(DesignSystem.Typography.footnote)
-                            .foregroundColor(DesignSystem.Colors.primary)
+                        aiConfig.baseURL = AIConfigurationStore.defaultBaseURL
                     }
-                    .buttonStyle(.plain)
+                    .font(DesignSystem.Typography.footnote)
+                    .foregroundColor(DesignSystem.Colors.primary)
                 }
-                .padding(DesignSystem.Spacing.medium)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(
-                    RoundedRectangle(cornerRadius: DesignSystem.CornerRadius.medium)
-                        .fill(DesignSystem.Colors.backgroundSecondary)
-                )
-                .transition(.opacity.combined(with: .move(edge: .top)))
             }
+
+            TextField(AIConfigurationStore.defaultBaseURL, text: $aiConfig.baseURL)
+                .keyboardType(.URL)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+                .font(DesignSystem.Typography.monoCaption)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 8)
+                .background(
+                    RoundedRectangle(cornerRadius: DesignSystem.CornerRadius.small)
+                        .fill(DesignSystem.Colors.backgroundTertiary)
+                )
         }
+        .padding(.vertical, 14)
+        .padding(.horizontal, DesignSystem.Spacing.medium)
     }
 
     // MARK: - Model Section

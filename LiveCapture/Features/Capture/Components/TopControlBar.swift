@@ -67,14 +67,12 @@ struct TopControlBar: View {
 	let showDebugInfo: Bool
 	let isAutoCaptureEnabled: Bool
 	let captureDelay: Double
-	let isPhotographyAdviceEnabled: Bool
 
 	let onBack: () -> Void
 	let onToggleDebug: () -> Void
 	let onToggleCamera: () -> Void
 	let onToggleAutoCapture: () -> Void
 	let onSetCaptureDelay: (Double) -> Void
-	let onTogglePhotographyAdvice: () -> Void
 
 	var body: some View {
 		HStack {
@@ -140,15 +138,7 @@ struct TopControlBar: View {
 						)
 					}
 
-					Button {
-						HapticManager.shared.selection()
-						onTogglePhotographyAdvice()
-					} label: {
-						Label(
-							isPhotographyAdviceEnabled ? "关闭 AI 建议" : "开启 AI 建议",
-							systemImage: isPhotographyAdviceEnabled ? "sparkles" : "sparkles.fill"
-						)
-					}
+					// AI 建议开关已迁移到「设置 → AI 助手」
 
 					// 延迟设置
 					Menu {

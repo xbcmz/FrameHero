@@ -251,7 +251,6 @@ struct CaptureView: View {
 			showDebugInfo: showDebugInfo,
 			isAutoCaptureEnabled: viewModel.isAutoCaptureEnabled,
 			captureDelay: viewModel.captureDelay,
-			isPhotographyAdviceEnabled: viewModel.isPhotographyAdviceEnabled,
 			onBack: {
 				dismiss()
 			},
@@ -268,9 +267,6 @@ struct CaptureView: View {
 			},
 			onSetCaptureDelay: { delay in
 				viewModel.setCaptureDelay(delay)
-			},
-			onTogglePhotographyAdvice: {
-				viewModel.isPhotographyAdviceEnabled.toggle()
 			}
 		)
 		.padding(.horizontal, 20)

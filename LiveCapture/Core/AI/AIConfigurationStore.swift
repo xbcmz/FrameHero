@@ -87,6 +87,17 @@ final class AIConfigurationStore: ObservableObject {
         self.apiKey = KeychainStore.load(account: Self.keychainAccount) ?? ""
     }
 
+    // MARK: - 连接状态
+
+    /// 连接测试结果（会话内有效，不持久化；用于设置页状态行展示）
+    enum ConnectionTestOutcome: Equatable {
+        case success(latency: TimeInterval)
+        case failure(message: String)
+    }
+
+    /// 最近一次连接测试结果，nil = 本次会话尚未测试
+    @Published var lastConnectionTest: ConnectionTestOutcome?
+
     // MARK: - 派生状态
 
     /// 实际生效的 API Key：Keychain（设置页配置）优先，Info.plist 兜底
@@ -120,7 +131,7 @@ final class AIConfigurationStore: ObservableObject {
 
     // MARK: - 修改
 
-    /// 保存 API Key（空串 = 清除）
+    /// 保存 API Key（空串 = 清除）。Key 变化后旧的测试结果不再可信，一并清除
     func setAPIKey(_ key: String) {
         let trimmed = key.trimmingCharacters(in: .whitespacesAndNewlines)
         if trimmed.isEmpty {
@@ -130,6 +141,7 @@ final class AIConfigurationStore: ObservableObject {
             KeychainStore.save(trimmed, account: Self.keychainAccount)
             apiKey = trimmed
         }
+        lastConnectionTest = nil
     }
 
     /// 恢复高级设置为默认值（不影响 Key）

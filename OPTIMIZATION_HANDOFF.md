@@ -15,12 +15,18 @@
 - 注意：`project.yml` / `generate_xcode_project.py` 已被删除，**新增 .swift 文件必须手动注册进 `LiveCapture.xcodeproj/project.pbxproj`**（PBXBuildFile + PBXFileReference + 组 children + Sources phase 四处）。
 - git 有完整历史：`7ea6b6c` 是修复前基线，随时可 diff/回滚。
 
-## 已完成（第三批 2026-08-29：设置页 AI 助手）
+## 已完成（第三批 2026-08-29：设置页 AI 助手 + UI 重构）
 
+### 功能
 - 新增「AI 助手」设置区：云端开关（关 = 本地 Mock，零联网）、API Key 输入（SecureField + 显隐切换 + 保存/清除）、模型选择（deepseek-chat 通用 V3 / deepseek-reasoner 深度思考 R1）、连接测试（GET /models 鉴权 + 延迟显示，不消耗 token）、高级设置（自定义 Base URL 支持自建代理，缺路径自动补 /chat/completions，一键恢复默认）
 - **API Key 迁移到 Keychain**（新文件 `KeychainStore.swift` + `AIConfigurationStore.swift`）：不再依赖 Info.plist 明文；Info.plist 里的旧 Key 仍作兜底（`effectiveAPIKey` 读取顺序 Keychain → Info.plist），老用户升级无感
-- DeepSeekService 构造器支持自定义 baseURL/model，新增 static `testConnection(apiKey:baseURL:completion:)`
+- DeepSeekService 构造器支持自定义 baseURL/model，新增 static `testConnection(apiKey:baseURL:completion:)`（返回 Result<TimeInterval, Error>）
 - PhotographyAdvisor 动态选路：订阅 AIConfigurationStore.objectWillChange（200ms debounce），设置页改动即时切换 DeepSeek/Mock、更新 Key 与模型，相机页无需重启
+- **「AI 建议」开关从拍摄页菜单迁移到设置页**（AppStorage key `aiAdviceEnabled`）：TopControlBar 不再有该菜单项；CaptureViewModel 按 VM 创建时读取一次（CaptureView 每次全屏弹出新建 VM，设置改动自然生效）
+
+### UI 重构（面向普通用户，非开发者配置页）
+- 主卡片三行突出核心信息：①总开关（渐变图标 + 状态行显示连接状态：已连接·456ms / 未配置 Key / 连接失败 等，数据源 `AIConfigurationStore.lastConnectionTest`）②建议模型（菜单式 Picker，云端关闭时置灰）③拍摄时给出 AI 建议（迁移来的开关）
+- API Key / 连接测试 / 接口地址全部收纳进「高级设置」折叠区（默认收起）；统一卡片背景 cardBackground、行高 padding 14、图标 15pt/24 宽、headline/caption1 字体层级
 - 新文件已手动注册进 pbxproj 四处；Debug/Release 双配置编译通过
 
 ## 已完成（第二批 2026-08-29，9 项：P1 全部可代码项 + P2 六项）
@@ -105,5 +111,6 @@
 ```
 
 - 核心文件：`CaptureViewModel.swift`（1266 行，中枢）、`CameraControlEngine.swift`、`CameraManager+*.swift`、`ZoomDialView.swift`
-- AI 建议默认关闭（`isPhotographyAdviceEnabled = false`），顶部「···」菜单可开
+- AI 建议开关在「设置 → AI 助手」（AppStorage `aiAdviceEnabled`，默认关），拍摄页不再提供开关
+- DeepSeek 配置全部在设置页（Key 存 Keychain），Info.plist 的 DeepSeekAPIKey 仅兜底
 - 视频帧方向：竖屏下 buffer 已是 3:4 portrait，`pixelOrientation` 用宽高判断
