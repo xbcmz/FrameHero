@@ -41,14 +41,17 @@ struct CompositionCoachOverlayView: View {
 
             // 顶部集群：状态图标 + 建议 chip。
             // 放在预览区顶部（而非底部）——底部是变焦盘/快门区，
-            // 全屏出血的预览区底边会与它们重叠
+            // 全屏出血的预览区底边会与它们重叠。
+            // 没有可显示内容时整体零占位（不渲染空框）
             VStack(spacing: 8) {
-                statusIcon
-                    .frame(height: 44)
-                    .padding(.top, 10)
+                if hasVisibleContent {
+                    statusIcon
+                        .frame(height: 44)
+                        .padding(.top, 10)
 
-                if phase != .analyzing {
-                    suggestionChip
+                    if phase != .analyzing, hasChipContent {
+                        suggestionChip
+                    }
                 }
 
                 Spacer()
@@ -57,6 +60,20 @@ struct CompositionCoachOverlayView: View {
         .animation(.easeInOut(duration: 0.25), value: phase)
         .animation(.easeInOut(duration: 0.25), value: suggestion)
         .allowsHitTesting(false)
+    }
+
+    /// 是否有可见内容（都没有时整体不渲染，避免空框/占位）
+    private var hasVisibleContent: Bool {
+        guard phase != .idle else { return false }
+        if phase == .analyzing { return true }
+        if phase == .achieved { return true }
+        // guiding：有图标或有 chip 文案才渲染
+        return guidance != nil || hasChipContent
+    }
+
+    /// chip 是否有内容（空文案 + 无场景标签时不渲染，避免空心胶囊）
+    private var hasChipContent: Bool {
+        !suggestion.isEmpty || (sceneLabel != nil && !sceneLabel!.isEmpty)
     }
 
     // MARK: - 三分构图线

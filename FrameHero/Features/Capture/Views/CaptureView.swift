@@ -165,25 +165,28 @@ struct CaptureView: View {
 			// 变焦盘
 			zoomDialRow
 
-			// AI 构图 + 拍照按钮
-			HStack(spacing: 25) {
-				if viewModel.isAICompositionEnabled {
-					aiCompositionButton
+			// 快门居中，AI 构图（左）与前置翻转（右）对称分布。
+			// 两侧用等宽弹性容器，关掉 AI 开关时快门也保持正中
+			HStack(alignment: .center) {
+				ZStack {
+					if viewModel.isAICompositionEnabled {
+						aiCompositionButton
+					}
 				}
+				.frame(maxWidth: .infinity)
 
 				CaptureButton(isScaled: captureAnimationScale > 1.5) {
 					HapticManager.shared.capture()
 					viewModel.capturePhoto()
 				}
-			}
 
-			// 辅助按钮
-			HStack {
-				SecondaryCircleButton(systemName: "arrow.triangle.2.circlepath.camera") {
-					HapticManager.shared.light()
-					viewModel.toggleCameraPosition()
+				ZStack {
+					SecondaryCircleButton(systemName: "arrow.triangle.2.circlepath.camera") {
+						HapticManager.shared.light()
+						viewModel.toggleCameraPosition()
+					}
 				}
-				Spacer()
+				.frame(maxWidth: .infinity)
 			}
 		}
 		.padding(.horizontal, 24)
