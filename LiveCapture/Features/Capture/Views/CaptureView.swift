@@ -195,6 +195,7 @@ struct CaptureView: View {
 				VStack(spacing: 0) {
 					topSection
 
+					#if DEBUG
 					if showDebugInfo {
 						debugPanel
 							.transition(.asymmetric(
@@ -202,6 +203,7 @@ struct CaptureView: View {
 								removal: .move(edge: .top).combined(with: .opacity)
 							))
 					}
+					#endif
 
 					// AI 摄影建议卡片（仅在 AI 建议开启且引导未激活时显示）
 					if viewModel.isPhotographyAdviceEnabled,
@@ -455,18 +457,26 @@ struct CaptureView: View {
 		}
 	}
 
+	/// 滑杆面板的取值规则：manual/locked 模式显示策略值（用户意图），
+	/// aiAuto 模式显示相机硬件回读值（cameraEnvironment，真实状态）。
+	/// 之前的 get 只读策略默认值、set 为空，滑杆位置与实际参数完全脱节。
 	@ViewBuilder
 	private func expandedPanelView(for panel: ProPanel) -> some View {
 		switch panel {
 		case .exposure:
 			ExposureControlView(
 				exposureBias: Binding(
-					get: { viewModel.photographyStrategy.manualExposureBias },
-					set: { _ in }
+					get: {
+						if viewModel.photographyStrategy.exposureControl == .aiAuto {
+							return viewModel.cameraEnvironment.currentExposureBias
+						}
+						return viewModel.photographyStrategy.manualExposureBias
+					},
+					set: { viewModel.setExposureBias($0) }
 				),
 				controlMode: Binding(
 					get: { viewModel.photographyStrategy.exposureControl },
-					set: { _ in }
+					set: { viewModel.setExposureControlMode($0) }
 				),
 				evRange: viewModel.cameraCapability.exposureBiasRange,
 				onModeChange: { mode in
@@ -480,12 +490,15 @@ struct CaptureView: View {
 		case .focus:
 			FocusControlView(
 				focusPosition: Binding(
-					get: { viewModel.photographyStrategy.manualFocusPosition ?? 0.5 },
-					set: { _ in }
+					get: {
+						viewModel.photographyStrategy.manualFocusPosition
+							?? viewModel.cameraEnvironment.focusLensPosition
+					},
+					set: { viewModel.setManualFocusPosition($0) }
 				),
 				controlMode: Binding(
 					get: { viewModel.photographyStrategy.focusControl },
-					set: { _ in }
+					set: { viewModel.setFocusControlMode($0) }
 				),
 				supportsManualFocus: viewModel.cameraCapability.supportsManualFocus,
 				onModeChange: { mode in
@@ -499,12 +512,15 @@ struct CaptureView: View {
 		case .whiteBalance:
 			WhiteBalanceControlView(
 				temperature: Binding(
-					get: { viewModel.photographyStrategy.manualWhiteBalanceTemp ?? 5500 },
-					set: { _ in }
+					get: {
+						viewModel.photographyStrategy.manualWhiteBalanceTemp
+							?? viewModel.cameraEnvironment.estimatedColorTemperature
+					},
+					set: { viewModel.setWhiteBalanceTemperature($0) }
 				),
 				controlMode: Binding(
 					get: { viewModel.photographyStrategy.whiteBalanceControl },
-					set: { _ in }
+					set: { viewModel.setWhiteBalanceControlMode($0) }
 				),
 				supportsManualWB: viewModel.cameraCapability.supportsManualWhiteBalance,
 				temperatureRange: 2000...10000,

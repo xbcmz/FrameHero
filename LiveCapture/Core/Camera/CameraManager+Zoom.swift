@@ -226,8 +226,9 @@ extension CameraManager {
         }
     }
 
-    /// 根据最新变焦结果刷新发布的状态模型。
-    func refreshZoomState(with factor: CGFloat, isContinuous: Bool) {
+    /// 根据最新变焦结果刷新发布的状态模型，返回刷新后的状态。
+    @discardableResult
+    func refreshZoomState(with factor: CGFloat, isContinuous: Bool) -> ZoomState {
         let clamped = clampZoom(factor)
         let lens = currentLensKind(for: clamped)
         let focal = estimateFocalLength(for: clamped, lens: lens)
@@ -238,6 +239,7 @@ extension CameraManager {
                              activeLens: lens,
                              isContinuous: isContinuous)
         updateZoomState(state)
+        return state
     }
 
     /// 将目标变焦倍率限制在硬件支持的区间内。
@@ -318,7 +320,10 @@ extension CameraManager {
             return
         }
 
-        refreshZoomState(with: target, isContinuous: isContinuous)
+        let newState = refreshZoomState(with: target, isContinuous: isContinuous)
+        // 变焦手势/预设后同步环境状态，否则 cameraEnvironment.currentZoomFactor
+        // 只停留在上次控制操作时的值（变焦盘、构图引擎读到的是过期倍率）
+        updateCameraEnvironment(device: device, zoomState: newState)
     }
 }
 

@@ -23,30 +23,39 @@ final class DeepSeekService: AIAdviceProvider {
     
     /// 当前请求的 task，用于取消
     private var currentTask: URLSessionDataTask?
-    
+
+    /// 请求代际标记：每次 generateAdvice 递增。
+    /// 响应返回时代际不匹配即为被取消/过期的旧请求，直接丢弃，
+    /// 否则迟到的旧响应会覆盖新一轮建议（此前只靠 cancel，超时兜不住竞态）。
+    private var generation = 0
+
     // MARK: - 初始化
-    
+
     init(apiKey: String) {
         self.apiKey = apiKey
     }
-    
+
     // MARK: - AIAdviceProvider
-    
+
     func generateAdvice(
         for compositionResult: CompositionResult,
         completion: @escaping (Result<AIAdviceResult, Error>) -> Void
     ) {
         // 取消上一个请求（避免频繁请求时的竞态）
         cancel()
-        
+        generation += 1
+        let requestGeneration = generation
+
         // 构建 prompt
         let prompt = buildPrompt(from: compositionResult)
-        
+
         // 构建请求
         var request = URLRequest(url: URL(string: baseURL)!)
         request.httpMethod = "POST"
         request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        // 无超时的话网络挂起时建议卡片会永远转圈
+        request.timeoutInterval = 15
         
         // 请求体
         let body: [String: Any] = [
@@ -78,7 +87,10 @@ final class DeepSeekService: AIAdviceProvider {
         // 发送请求
         let task = URLSession.shared.dataTask(with: request) { [weak self] data, response, error in
             guard let self = self else { return }
-            
+
+            // 迟到的旧响应一律丢弃，不让它覆盖新一轮结果
+            guard requestGeneration == self.generation else { return }
+
             if let error = error {
                 DispatchQueue.main.async {
                     completion(.failure(error))

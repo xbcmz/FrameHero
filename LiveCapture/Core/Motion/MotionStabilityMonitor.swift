@@ -156,8 +156,13 @@ final class MotionStabilityMonitor: ObservableObject {
     /// 启动传感器采集与稳定性分析。
     /// 只使用 deviceMotion 融合数据流：它已包含姿态、userAcceleration 和 rotationRate，
     /// 单独再开加速度计/陀螺仪两条原始流是纯冗余（每秒多 ~120 次队列派发）。
+    /// start/stop 都在主线程调用，isMonitoring 无需加锁；
+    /// 没有这个守卫时 onAppear 重复触发会叠开两份数据流，事件翻倍。
+    private var isMonitoring = false
+
     func start() {
-        guard motion.isDeviceMotionAvailable else { return }
+        guard motion.isDeviceMotionAvailable, !isMonitoring else { return }
+        isMonitoring = true
         motion.deviceMotionUpdateInterval = 1.0 / 60.0
 
         motion.startDeviceMotionUpdates(to: OperationQueue()) { [weak self] data, _ in
@@ -174,6 +179,8 @@ final class MotionStabilityMonitor: ObservableObject {
 
     /// 停止传感器采集并清理内部状态。
     func stop() {
+        guard isMonitoring else { return }
+        isMonitoring = false
         motion.stopAccelerometerUpdates()
         motion.stopGyroUpdates()
         motion.stopDeviceMotionUpdates()

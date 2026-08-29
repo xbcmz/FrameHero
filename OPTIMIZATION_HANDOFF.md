@@ -1,7 +1,7 @@
 # LiveCapture 优化交接文档
 
 > 用途：开新对话时让 AI 先读本文件（说「先读 OPTIMIZATION_HANDOFF.md」即可接上进度）。
-> 更新时间：2026-08-29。GitHub 已同步（origin: git@github.com:xbcmz/LiveCapture.git，分支 main）。
+> 更新时间：2026-08-29（第二批优化已完成并提交）。GitHub 已同步（origin: git@github.com:xbcmz/LiveCapture.git，分支 main）。
 
 ## 项目位置与验证命令
 
@@ -15,7 +15,27 @@
 - 注意：`project.yml` / `generate_xcode_project.py` 已被删除，**新增 .swift 文件必须手动注册进 `LiveCapture.xcodeproj/project.pbxproj`**（PBXBuildFile + PBXFileReference + 组 children + Sources phase 四处）。
 - git 有完整历史：`7ea6b6c` 是修复前基线，随时可 diff/回滚。
 
-## 已完成（本轮 2026-08-29，约 20 项修复）
+## 已完成（第二批 2026-08-29，9 项：P1 全部可代码项 + P2 六项）
+
+### P1：专业参数滑杆与真实状态打通（原问题：滑杆假双向、与实际参数脱节）
+- 滑杆 Binding 不再是空 set：get 按「aiAuto → 硬件回读值（cameraEnvironment）、manual/locked → 策略值」取数，set 直连 CaptureViewModel 对应方法
+- aiAuto 切手动曝光时用当前真实 EV 作起点（此前从 0 起跳，画面亮度突变；对焦/白平衡原本就有该语义）
+- cameraEnvironment 与硬件同步三路：①变焦手势/预设（applyZoomFactor 后回读）②镜头切换（toggleCameraPosition 后回读）③新增 0.5s 周期回读计时器（sessionQueue，会话运行期间生效）
+- updateCameraEnvironment 值不变不发布（去重，避免主线程 2Hz 无效刷新 + 控制引擎重复评估）
+
+### P1：PhotoStorageService 跨线程数据竞争修复
+- records/isLoaded 收敛到 storageQueue 单线程访问；loadRecords() 改为异步 loadRecordsIfNeeded()（结果经 recordsPublisher 发布），MainTabView 调用点同步更新
+
+### P2 代码质量
+- CoreML 预处理重写：居中裁方形等比缩放（不再把 3:4 拉伸到 224×224）、通道拆分/归一化/半精度全程 Accelerate（ARGB8888toPlanar8 + vDSP_vfltu8/vsmul + PlanarFtoPlanar16F，替代逐像素 Swift 循环）、orientation 真正参与预处理、bbox 在「方形裁剪空间 ↔ 全图空间」间正确映射（state 输入与动作微调保持在模型原生方形空间）
+  - ⚠️ 风险标注：模型输入分布从「拉伸」变为「裁方形」，若真机识别质量下降可回退该提交
+- DeepSeekService：15s 请求超时 + 代际标记（迟到的旧响应直接丢弃，不再覆盖新结果）
+- MotionStabilityMonitor.start() 加 isMonitoring 重入保护（此前 onAppear 重复触发会叠开数据流）
+- 视频防抖死代码修复：configureStabilization（Session）与 applyStabilizationIfAvailable（PreviewView）里 #available(iOS 13) 分支为空导致 iOS 13+ 从未设置防抖，现直接设置 .auto
+- ZoomRingView.swift 已删除（被 ZoomDialView 替代），pbxproj 四处引用同步清理（plutil 校验通过）
+- DebugPanel 与「显示调试信息」菜单入口仅在 DEBUG 构建存在（#if DEBUG 门控，Debug/Release 双配置编译验证通过）
+
+## 已完成（第一批 2026-08-29，约 20 项修复）
 
 ### 可用性根因（「不如原生相机」的主因，已全修）
 - 硬件参数 10-20Hz 全量重放 → ControlEngine 已下发状态差异化应用，只在值变化时下发
@@ -44,24 +64,20 @@
 ## 未完成 / 已知问题（下轮优化清单，按优先级）
 
 ### P1（直接影响体验）
-1. **曝光/对焦/白平衡滑块不反映相机真实状态**：CaptureView 里传给三个 ControlView 的 Binding 是假双向（set 为空），AI Auto 模式下滑块位置与实际参数脱节；且 `cameraEnvironment.currentZoomFactor` 只在 Control 操作后更新，变焦手势后不更新
-2. **PhotoStorageService.records 跨线程数据竞争**：loadRecords 主线程读 vs storageQueue 写，非原子 Array
-3. **自动拍摄流水线与新布局的整合**：魔法棒开启后引导 UI（裁切框/追踪点/中心圆）仍是旧交互逻辑，与其余原生化的 UI 风格割裂；需要重新设计「对齐 → 倒计时 → 拍摄」的呈现
-4. **点按对焦的前置坐标**需真机验证（captureDevicePointConverted 已接管连接镜像，理论正确）
+1. **自动拍摄流水线与新布局的整合**：魔法棒开启后引导 UI（裁切框/追踪点/中心圆）仍是旧交互逻辑，与其余原生化的 UI 风格割裂；需要重新设计「对齐 → 倒计时 → 拍摄」的呈现（现在排到下轮主项）
+2. **点按对焦的前置坐标**需真机验证（captureDevicePointConverted 已接管连接镜像，理论正确）
+3. **真机验证清单**：变焦后滑杆/环境状态同步、方形裁剪输入的 Adacrop 识别质量、0.5s 周期回读的功耗影响
 
 ### P2（代码质量）
-5. CoreML 预处理：非等比缩放拉伸到 224×224（破坏宽高比）、逐像素手写循环（应 Accelerate/vImage）、orientation 参数收下但没传给模型
-6. DeepSeekService：无请求超时/代际标记，迟到的旧响应仍会覆盖 lastResult；API Key 明文在 Info.plist（上线前换 Keychain 或服务端代理）
-7. MotionStabilityMonitor.start() 若被调用两次会开双份数据流（无重入保护）
-8. VideoOutput/Preview 的视频稳定配置是死代码（#available(iOS 13) 分支为空，实际从未设置 stabilization）
-9. ZoomRingView.swift 已不再被引用（被 ZoomDialView 替代），可删（注意 pbxproj 同步清理）
-10. debugMessage/DebugPanel 仍是开发向文案，量产应隐藏
+4. CoreML 模型输入改为方形裁剪后，建议用真机对比新旧识别质量（见上方风险标注）
+5. DeepSeekService：API Key 明文在 Info.plist（上线前换 Keychain 或服务端代理；超时与代际标记已修）
+6. CameraControlEngine/Advisor 对 debounce 策略的双通道评估还有优化空间；`cameraManager.zoomState` 在 sessionQueue 上被跨线程读取（历史模式，可择机重构为参数直传）
+7. 设计文档 `../ai-photography-assistant-design/ai-photography-assistant-design.html` 里有五维构图评分、机位推荐、Qwen3-VL、ARKit 的演进方案，可与代码对照推进
+8. 图库（HomeView/GalleryView/SettingsView/ShareCardGenerator）尚未审查过
 
-### P3（功能演进，设计文档里有规划）
-11. 夜景/低光检测（路线图 Phase 6）、HDR（Phase 7）
-12. 拍摄参数预设（人像/风景/美食，Phase 9）
-13. 设计文档 `../ai-photography-assistant-design/ai-photography-assistant-design.html` 里有五维构图评分、机位推荐、Qwen3-VL、ARKit 的演进方案，可与代码对照推进
-14. 图库（HomeView/GalleryView/SettingsView/ShareCardGenerator）尚未审查过
+### P3（功能演进）
+9. 夜景/低光检测（路线图 Phase 6）、HDR（Phase 7）
+10. 拍摄参数预设（人像/风景/美食，Phase 9）
 
 ## 关键架构速记
 

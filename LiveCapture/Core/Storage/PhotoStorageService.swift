@@ -7,6 +7,9 @@ final class PhotoStorageService {
     static let shared = PhotoStorageService()
 
     private let storageQueue = DispatchQueue(label: "livecapture.storage", qos: .utility)
+    // records / isLoaded 只允许在 storageQueue 上访问。
+    // 之前主线程（loadRecords）与队列（savePhoto/deleteRecord）并发读写同一个
+    // 非原子 Array，是会随机崩溃的数据竞争。
     private var records: [PhotoRecord] = []
     private var isLoaded = false
 
@@ -33,18 +36,23 @@ final class PhotoStorageService {
 
     // MARK: - Public API
 
-    func loadRecords() -> [PhotoRecord] {
-        if isLoaded { return records }
-        ensureDirectories()
-        if let data = try? Data(contentsOf: recordsURL),
-           let decoded = try? JSONDecoder().decode([PhotoRecord].self, from: data) {
-            records = decoded
+    /// 触发磁盘记录加载（异步）。
+    /// 结果经 recordsPublisher 发布到主线程，HomeViewModel 订阅该流刷新列表；
+    /// 重复调用安全，只在首次真正读盘。
+    func loadRecordsIfNeeded() {
+        storageQueue.async { [weak self] in
+            guard let self, !self.isLoaded else { return }
+            self.isLoaded = true
+            self.ensureDirectories()
+            if let data = try? Data(contentsOf: self.recordsURL),
+               let decoded = try? JSONDecoder().decode([PhotoRecord].self, from: data) {
+                self.records = decoded
+            }
+            let snapshot = self.records
+            DispatchQueue.main.async {
+                self.recordsPublisher.send(snapshot)
+            }
         }
-        isLoaded = true
-        DispatchQueue.main.async {
-            self.recordsPublisher.send(self.records)
-        }
-        return records
     }
 
     func savePhoto(data: Data, detectionMethod: String? = nil) {
@@ -122,6 +130,8 @@ final class PhotoStorageService {
         }
     }
 
+    /// 写盘并把最新快照发布到主线程。只能在 storageQueue 上调用
+    /// （records 的读写都必须 confinement 在该队列）。
     private func persist() {
         let snapshot = records
         let url = recordsURL

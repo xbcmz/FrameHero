@@ -56,59 +56,109 @@ final class CoreMLCropDetector {
 
     // MARK: - Image Preprocessing
 
-    private func pixelBufferToMLMultiArray(_ pixelBuffer: CVPixelBuffer) -> MLMultiArray? {
-        let width = CVPixelBufferGetWidth(pixelBuffer)
-        let height = CVPixelBufferGetHeight(pixelBuffer)
-        let targetSize = 224
+    /// 224×224 模型输入，以及该输入对应的方形裁剪区
+    /// （bbox 预测在方形空间，映射回全图坐标时需要它）
+    private struct SquareModelInput {
+        let array: MLMultiArray
+        let squareCrop: CGRect  // oriented 图像像素坐标中的方形区域
+    }
 
-        // Render scaled version to intermediate buffer
+    /// 构建方形模型输入：居中裁方形 → 等比缩放到 224×224。
+    /// 之前把 3:4 画面非等比拉伸成正方形，人物比例失真、偏离模型训练分布。
+    private func makeSquareModelInput(from image: CIImage) -> SquareModelInput? {
+        let extent = image.extent
+        let side = min(extent.width, extent.height)
+        guard side >= 1 else { return nil }
+        let squareCrop = CGRect(x: extent.midX - side / 2,
+                                y: extent.midY - side / 2,
+                                width: side,
+                                height: side)
+
         var outBuffer: CVPixelBuffer?
-        let status = CVPixelBufferCreate(kCFAllocatorDefault, targetSize, targetSize,
+        let status = CVPixelBufferCreate(kCFAllocatorDefault, 224, 224,
                                          kCVPixelFormatType_32BGRA, nil, &outBuffer)
         guard status == kCVReturnSuccess, let outBuffer else { return nil }
 
-        let ciImage = CIImage(cvPixelBuffer: pixelBuffer)
-        let scaleX = CGFloat(targetSize) / CGFloat(width)
-        let scaleY = CGFloat(targetSize) / CGFloat(height)
-        let transform = CGAffineTransform(scaleX: scaleX, y: scaleY)
-        let scaled = ciImage.transformed(by: transform)
-        ciContext.render(scaled, to: outBuffer)
+        // 方形裁剪 → 方形缓冲，CIContext 等比缩放
+        ciContext.render(image.cropped(to: squareCrop), to: outBuffer)
 
-        // Create MLMultiArray [1, 3, 224, 224] float16
-        guard let array = try? MLMultiArray(shape: [1, 3, NSNumber(value: targetSize), NSNumber(value: targetSize)],
+        guard let array = bgraBufferToCHWFloat16(outBuffer) else { return nil }
+        return SquareModelInput(array: array, squareCrop: squareCrop)
+    }
+
+    /// BGRA 像素缓冲 → [1,3,224,224] CHW float16，通道拆分/归一化/半精度转换全程 Accelerate。
+    /// （之前是逐像素 Swift 循环，224×224×3 要做 15 万次浮点转换）
+    private func bgraBufferToCHWFloat16(_ buffer: CVPixelBuffer) -> MLMultiArray? {
+        let width = CVPixelBufferGetWidth(buffer)
+        let height = CVPixelBufferGetHeight(buffer)
+        let count = width * height
+
+        guard let array = try? MLMultiArray(shape: [1, 3, NSNumber(value: width), NSNumber(value: height)],
                                             dataType: .float16) else { return nil }
 
-        CVPixelBufferLockBaseAddress(outBuffer, .readOnly)
-        defer { CVPixelBufferUnlockBaseAddress(outBuffer, .readOnly) }
+        CVPixelBufferLockBaseAddress(buffer, .readOnly)
+        defer { CVPixelBufferUnlockBaseAddress(buffer, .readOnly) }
+        guard let baseAddress = CVPixelBufferGetBaseAddress(buffer) else { return nil }
 
-        guard let baseAddress = CVPixelBufferGetBaseAddress(outBuffer) else { return nil }
-        let bytesPerRow = CVPixelBufferGetBytesPerRow(outBuffer)
-        let ptr = baseAddress.assumingMemoryBound(to: UInt8.self)
+        // BGRA 内存序拆成 4 个 Planar8 通道：plane0=B, plane1=G, plane2=R, plane3=A（丢弃）
+        var planes: [vImage_Buffer] = (0..<4).map { _ in vImage_Buffer() }
+        let u8Blocks: [UnsafeMutableRawPointer] = (0..<4).map { _ in
+            UnsafeMutableRawPointer.allocate(byteCount: count, alignment: 64)
+        }
+        defer { u8Blocks.forEach { $0.deallocate() } }
+        for (idx, block) in u8Blocks.enumerated() {
+            planes[idx] = vImage_Buffer(data: block,
+                                        height: vImagePixelCount(height),
+                                        width: vImagePixelCount(width),
+                                        rowBytes: width)
+        }
 
-        let floatPtr = array.dataPointer.assumingMemoryBound(to: Float16.self)
-        let stride = targetSize * targetSize
+        var src = vImage_Buffer(data: baseAddress,
+                                height: vImagePixelCount(height),
+                                width: vImagePixelCount(width),
+                                rowBytes: CVPixelBufferGetBytesPerRow(buffer))
+        // ARGB8888toPlanar8 按内存字节序拆分：destA←byte0、destR←byte1、destG←byte2、destB←byte3。
+        // BGRA 缓冲（byte0=B, byte1=G, byte2=R, byte3=A）代入后：
+        // planes[0]=B、planes[1]=G、planes[2]=R、planes[3]=A（丢弃）
+        let convertError = vImageConvert_ARGB8888toPlanar8(&src, &planes[0], &planes[1], &planes[2], &planes[3],
+                                                           vImage_Flags(kvImageNoFlags))
+        guard convertError == kvImageNoError else { return nil }
 
-        for y in 0..<targetSize {
-            for x in 0..<targetSize {
-                let pixelOffset = y * bytesPerRow + x * 4
-                let b = Float(ptr[pixelOffset]) / 255.0
-                let g = Float(ptr[pixelOffset + 1]) / 255.0
-                let r = Float(ptr[pixelOffset + 2]) / 255.0
+        // 模型通道序为 RGB：plane0=R(planes[2])、plane1=G(planes[1])、plane2=B(planes[0])
+        let rgbSources = [planes[2], planes[1], planes[0]]
+        var normScale: Float = 1.0 / 255.0
+        let stride = count
+        let f16Base = array.dataPointer.assumingMemoryBound(to: Float16.self)
 
-                // CHW format
-                floatPtr[0 * stride + y * targetSize + x] = Float16(r)
-                floatPtr[1 * stride + y * targetSize + x] = Float16(g)
-                floatPtr[2 * stride + y * targetSize + x] = Float16(b)
-            }
+        let f32Block = UnsafeMutableRawPointer.allocate(byteCount: count * 4, alignment: 64)
+        defer { f32Block.deallocate() }
+
+        for (modelPlane, srcPlane) in rgbSources.enumerated() {
+            let f32Ptr = f32Block.assumingMemoryBound(to: Float.self)
+            vDSP_vfltu8(srcPlane.data.assumingMemoryBound(to: UInt8.self), 1,
+                        f32Ptr, 1, vDSP_Length(count))
+            vDSP_vsmul(f32Ptr, 1, &normScale, f32Ptr, 1, vDSP_Length(count))
+
+            var f32Buffer = vImage_Buffer(data: f32Block,
+                                          height: vImagePixelCount(height),
+                                          width: vImagePixelCount(width),
+                                          rowBytes: width * 4)
+            var f16Buffer = vImage_Buffer(data: f16Base + modelPlane * stride,
+                                          height: vImagePixelCount(height),
+                                          width: vImagePixelCount(width),
+                                          rowBytes: width * 2)
+            let halfError = vImageConvert_PlanarFtoPlanar16F(&f32Buffer, &f16Buffer,
+                                                             vImage_Flags(kvImageNoFlags))
+            guard halfError == kvImageNoError else { return nil }
         }
 
         return array
     }
 
-    private func cropPixelBuffer(_ pixelBuffer: CVPixelBuffer, bbox: [Float]) -> CVPixelBuffer? {
-        let ciImage = CIImage(cvPixelBuffer: pixelBuffer)
-        let imageWidth = ciImage.extent.width
-        let imageHeight = ciImage.extent.height
+    /// 从 oriented 图像中按归一化 bbox（相对全图）裁出 224×224 的 actor 模型输入
+    private func cropPixelBuffer(from image: CIImage, bbox: [Float]) -> CVPixelBuffer? {
+        let imageWidth = image.extent.width
+        let imageHeight = image.extent.height
 
         // bbox 为归一化的 [cx, cy, w, h]
         let cx = CGFloat(bbox[0]) * imageWidth
@@ -117,11 +167,11 @@ final class CoreMLCropDetector {
         let bh = CGFloat(bbox[3]) * imageHeight
 
         let cropRect = CGRect(x: cx - bw / 2, y: cy - bh / 2, width: bw, height: bh)
-            .intersection(ciImage.extent)
+            .intersection(image.extent)
 
         guard cropRect.width > 0, cropRect.height > 0 else { return nil }
 
-        let cropped = ciImage.cropped(to: cropRect)
+        let cropped = image.cropped(to: cropRect)
 
         var outBuffer: CVPixelBuffer?
         CVPixelBufferCreate(kCFAllocatorDefault, 224, 224, kCVPixelFormatType_32BGRA, nil, &outBuffer)
@@ -159,14 +209,17 @@ final class CoreMLCropDetector {
                 return
             }
 
+            // orientation 真正参与预处理（.up 是常见路径，连接层已旋转时为零开销）
+            let orientedImage = CIImage(cvPixelBuffer: pixelBuffer).oriented(orientation)
+
             // Step 1: 预处理图像并运行 BBox 模型
-            guard let inputArray = self.pixelBufferToMLMultiArray(pixelBuffer) else {
+            guard let input = self.makeSquareModelInput(from: orientedImage) else {
                 completion(nil)
                 return
             }
 
             do {
-                let bboxInput = try MLDictionaryFeatureProvider(dictionary: ["full_img": inputArray])
+                let bboxInput = try MLDictionaryFeatureProvider(dictionary: ["full_img": input.array])
                 let bboxOutput = try bboxModel.prediction(from: bboxInput)
 
                 guard let bboxArray = bboxOutput.featureValue(for: "bbox")?.multiArrayValue else {
@@ -174,11 +227,20 @@ final class CoreMLCropDetector {
                     return
                 }
 
-                let bbox = (0..<4).map { Float(truncating: bboxArray[$0]) }
+                let squareBBox = (0..<4).map { Float(truncating: bboxArray[$0]) }
+
+                // bbox 是相对方形裁剪区的归一化坐标，映射回全图归一化空间，
+                // 后续裁剪/坐标换算才能与全图对齐
+                let bbox = Self.mapToFullImage(squareBBox,
+                                               squareCrop: input.squareCrop,
+                                               fullExtent: orientedImage.extent)
 
                 // Step 2: 裁切并运行 Actor 模型
-                guard let cropBuffer = self.cropPixelBuffer(pixelBuffer, bbox: bbox),
-                      let cropArray = self.pixelBufferToMLMultiArray(cropBuffer) else {
+                guard let cropBuffer = self.cropPixelBuffer(from: orientedImage, bbox: bbox) else {
+                    completion(nil)
+                    return
+                }
+                guard let cropInput = self.makeSquareModelInput(from: CIImage(cvPixelBuffer: cropBuffer)) else {
                     completion(nil)
                     return
                 }
@@ -187,10 +249,11 @@ final class CoreMLCropDetector {
                     completion(nil)
                     return
                 }
-                for i in 0..<4 { stateArray[i] = NSNumber(value: bbox[i]) }
+                // state 输入必须用 bbox 模型自己的坐标空间（方形裁剪空间）
+                for i in 0..<4 { stateArray[i] = NSNumber(value: squareBBox[i]) }
 
                 let actorInput = try MLDictionaryFeatureProvider(dictionary: [
-                    "crop_img": cropArray,
+                    "crop_img": cropInput.array,
                     "state_workaround": stateArray
                 ])
                 let actorOutput = try actorModel.prediction(from: actorInput)
@@ -208,7 +271,11 @@ final class CoreMLCropDetector {
                     return
                 }
 
-                let refinedBBox = self.applyAction(maxIndex, to: bbox)
+                // 动作微调在模型原生（方形）空间进行，再映射回全图
+                let refinedSquareBBox = self.applyAction(maxIndex, to: squareBBox)
+                let refinedBBox = Self.mapToFullImage(refinedSquareBBox,
+                                                      squareCrop: input.squareCrop,
+                                                      fullExtent: orientedImage.extent)
                 let rect = self.bboxToCGRect(refinedBBox)
 
                 // 调整到目标宽高比
@@ -223,6 +290,16 @@ final class CoreMLCropDetector {
     }
 
     // MARK: - Action Mapping
+
+    /// 把方形裁剪空间中的归一化 [cx, cy, w, h] bbox 映射回全图归一化空间
+    private static func mapToFullImage(_ bbox: [Float], squareCrop: CGRect, fullExtent: CGRect) -> [Float] {
+        [
+            Float((squareCrop.minX + CGFloat(bbox[0]) * squareCrop.width - fullExtent.minX) / fullExtent.width),
+            Float((squareCrop.minY + CGFloat(bbox[1]) * squareCrop.height - fullExtent.minY) / fullExtent.height),
+            Float(CGFloat(bbox[2]) * squareCrop.width / fullExtent.width),
+            Float(CGFloat(bbox[3]) * squareCrop.height / fullExtent.height)
+        ]
+    }
 
     /// 将 7 个动作映射到 bbox 调整。
     /// 0: no-op, 1: left, 2: right, 3: up, 4: down, 5: zoom out, 6: zoom in

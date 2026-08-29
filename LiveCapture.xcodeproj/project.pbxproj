@@ -10,7 +10,6 @@
 		00C8FFA39F084C9D508B93BA /* AdacropTeacherActor.mlmodelc in Resources */ = {isa = PBXBuildFile; fileRef = D74DEF0D7FA31E3FF404E47E /* AdacropTeacherActor.mlmodelc */; };
 		03A9AF27C3F9DDD07744750D /* CompositionEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = A17C525FECAE9A442F66F46B /* CompositionEngine.swift */; };
 		0A46EAA4E72F1C66EE62CD9C /* PhotographyAdvisor.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF1BF4596AC0314B2D812539 /* PhotographyAdvisor.swift */; };
-		0F96E218DC825CA75BE7B3FC /* ZoomRingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6EC6E5DB91E8D404927871B4 /* ZoomRingView.swift */; };
 		A1B2C3D4E5F60718293A4B5C /* ZoomDialView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D4C5B6A79880718293B4C5D6 /* ZoomDialView.swift */; };
 		E3A9BFBD9DAE4886A90ADEDA /* ExposureControlView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B3708D3A008D44DD9AD2D9EA /* ExposureControlView.swift */; };
 		1B30D0800780441C9658DEEB /* FocusControlView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3826DB0DD3154F9C95682F4B /* FocusControlView.swift */; };
@@ -97,7 +96,6 @@
 		59E2374320C1069976212848 /* AdacropTeacherActor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AdacropTeacherActor.swift; sourceTree = "<group>"; };
 		62B02AF7DC6DA2CF80FA03E4 /* ThumbnailGenerator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThumbnailGenerator.swift; sourceTree = "<group>"; };
 		676F069A0B112D0E3821775E /* AdacropTeacherBBox.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AdacropTeacherBBox.swift; sourceTree = "<group>"; };
-		6EC6E5DB91E8D404927871B4 /* ZoomRingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ZoomRingView.swift; sourceTree = "<group>"; };
 		D4C5B6A79880718293B4C5D6 /* ZoomDialView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ZoomDialView.swift; sourceTree = "<group>"; };
 		B3708D3A008D44DD9AD2D9EA /* ExposureControlView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExposureControlView.swift; sourceTree = "<group>"; };
 		3826DB0DD3154F9C95682F4B /* FocusControlView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FocusControlView.swift; sourceTree = "<group>"; };
@@ -448,7 +446,6 @@
 			children = (
 				42ED594226E429C4918967F3 /* CircleButton.swift */,
 				4F9FC0DAE305F19D61BF3163 /* ContentOverlayView.swift */,
-				6EC6E5DB91E8D404927871B4 /* ZoomRingView.swift */,
 				D4C5B6A79880718293B4C5D6 /* ZoomDialView.swift */,
 				B3708D3A008D44DD9AD2D9EA /* ExposureControlView.swift */,
 				3826DB0DD3154F9C95682F4B /* FocusControlView.swift */,
@@ -641,7 +638,6 @@
 				82C7A0311FF2E2723CD80DD4 /* TopControlBar.swift in Sources */,
 				F3E23AB6AACFF0E2323B7366 /* UniformSmoother.swift in Sources */,
 				6634261E83562EF0F1B1EACF /* UserGuidanceView.swift in Sources */,
-				0F96E218DC825CA75BE7B3FC /* ZoomRingView.swift in Sources */,
 				A1B2C3D4E5F60718293A4B5C /* ZoomDialView.swift in Sources */,
 				E3A9BFBD9DAE4886A90ADEDA /* ExposureControlView.swift in Sources */,
 				1B30D0800780441C9658DEEB /* FocusControlView.swift in Sources */,

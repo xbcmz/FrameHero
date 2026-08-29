@@ -430,17 +430,24 @@ final class CaptureViewModel: ObservableObject {
 	
 	/// 切换曝光控制模式
 	func setExposureControlMode(_ mode: ControlMode) {
+		let previousMode = photographyStrategy.exposureControl
 		photographyStrategy.exposureControl = mode
-		
+
 		// 如果切回 aiAuto，重置手动 EV
 		if mode == .aiAuto {
 			photographyStrategy.manualExposureBias = 0
 			photographyStrategy.brightnessPreference = .auto
 		}
-		
+
 		// 如果切到 locked，锁定当前值
 		if mode == .locked {
 			// 当前 EV 值就是锁定值
+			photographyStrategy.manualExposureBias = cameraEnvironment.currentExposureBias
+		}
+
+		// 从自动切到手动时，用当前真实 EV 作为起点（与对焦/白平衡语义一致），
+		// 否则滑杆会从默认 0 起跳，画面亮度突变
+		if mode == .manual, previousMode == .aiAuto {
 			photographyStrategy.manualExposureBias = cameraEnvironment.currentExposureBias
 		}
 	}

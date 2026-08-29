@@ -95,7 +95,8 @@ struct TopControlBar: View {
 
 			// 右侧菜单按钮
 			Menu {
-				// 调试模式
+				#if DEBUG
+				// 调试面板是开发向工具，量产构建不显示入口
 				Button {
 					HapticManager.shared.selection()
 					onToggleDebug()
@@ -105,6 +106,7 @@ struct TopControlBar: View {
 				}
 
 				Divider()
+				#endif
 
 				// 相机设置部分
 				Menu {

@@ -51,7 +51,7 @@ struct MainTabView: View {
         .tint(DesignSystem.Colors.primary)
         .preferredColorScheme(resolvedScheme)
         .onAppear {
-            _ = PhotoStorageService.shared.loadRecords()
+            PhotoStorageService.shared.loadRecordsIfNeeded()
         }
         .onChange(of: selectedTab) { _, newTab in
             if newTab == .camera {

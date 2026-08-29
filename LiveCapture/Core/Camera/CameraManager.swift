@@ -78,6 +78,11 @@ final class CameraManager: NSObject, ObservableObject {
     /// 当前相机环境状态（实时参数）
     @Published private(set) var cameraEnvironment: CameraEnvironment = .empty
 
+    /// 周期性回读硬件参数的计时器（sessionQueue 上触发）。
+    /// 自动对焦/自动曝光会持续微调镜头位置、ISO 等，事件驱动的更新覆盖不到，
+    /// 环境状态必须周期回读，专业面板滑杆才能显示真实参数。
+    var environmentRefreshTimer: DispatchSourceTimer?
+
     /// 负责捕获视频与照片的 AVCapture 会话对象。
     let session: AVCaptureSession = AVCaptureSession()
     /// 配置会话所使用的串行队列，避免阻塞主线程。
@@ -154,13 +159,42 @@ final class CameraManager: NSObject, ObservableObject {
     }
     
     /// 更新相机环境状态，确保 setter 在类作用域内访问。
+    /// 值没变化时不发布：周期回读每次都会构造新值，
+    /// 若不去重，主线程会以 2Hz 被无效刷新（SwiftUI 重渲 + 控制引擎重复评估）。
     func updateCameraEnvironment(_ environment: CameraEnvironment) {
+        if environment == cameraEnvironment { return }
         if Thread.isMainThread {
             cameraEnvironment = environment
         } else {
             DispatchQueue.main.async {
                 self.cameraEnvironment = environment
             }
+        }
+    }
+
+    // MARK: - 环境周期回读
+
+    /// 会话运行期间以 0.5s 间隔回读硬件参数，保持 cameraEnvironment 与真实状态同步。
+    /// 重复调用安全（已有计时器则跳过）。
+    func startEnvironmentRefresh() {
+        sessionQueue.async { [weak self] in
+            guard let self, self.environmentRefreshTimer == nil else { return }
+            let timer = DispatchSource.makeTimerSource(queue: self.sessionQueue)
+            timer.schedule(deadline: .now() + 0.5, repeating: 0.5)
+            timer.setEventHandler { [weak self] in
+                guard let self, let device = self.activeVideoDevice else { return }
+                self.updateCameraEnvironment(device: device, zoomState: self.zoomState)
+            }
+            timer.resume()
+            self.environmentRefreshTimer = timer
+        }
+    }
+
+    /// 停止环境回读计时器。
+    func stopEnvironmentRefresh() {
+        sessionQueue.async { [weak self] in
+            self?.environmentRefreshTimer?.cancel()
+            self?.environmentRefreshTimer = nil
         }
     }
 }

@@ -124,15 +124,14 @@ final class PreviewUIView: UIView {
     var videoPreviewLayer: AVCaptureVideoPreviewLayer { layer as! AVCaptureVideoPreviewLayer }
 }
 
-/// 如果支持，应用视频防抖模式
+/// 如果支持，应用视频防抖模式。
+/// preferredVideoStabilizationMode 自 iOS 10 起可用，
+/// 之前 #available(iOS 13) 分支在 iOS 13+ 为空，防抖从未生效。
 private func applyStabilizationIfAvailable(on connection: AVCaptureConnection?) {
-#if os(iOS) && !targetEnvironment(macCatalyst)
+    #if !targetEnvironment(macCatalyst)
     guard let connection, connection.isVideoStabilizationSupported else { return }
-    guard #available(iOS 13.0, *) else {
-        connection.preferredVideoStabilizationMode = .auto
-        return
-    }
-#endif
+    connection.preferredVideoStabilizationMode = .auto
+    #endif
 }
 
 #endif

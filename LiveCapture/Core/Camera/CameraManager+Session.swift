@@ -130,6 +130,7 @@ extension CameraManager {
         sessionQueue.async { [weak self] in
             guard let self, self.shouldBeRunning, !self.session.isRunning else { return }
             self.session.startRunning()
+            self.startEnvironmentRefresh()
             DispatchQueue.main.async { self.isSessionRunning = true }
         }
     }
@@ -137,6 +138,7 @@ extension CameraManager {
     /// 停止捕获会话。先同步清除 shouldBeRunning 再异步停止，避免竞态。
     func stopSession() {
         shouldBeRunning = false
+        stopEnvironmentRefresh()
         sessionQueue.async { [weak self] in
             guard let self, self.session.isRunning else { return }
             self.session.stopRunning()
@@ -148,6 +150,8 @@ extension CameraManager {
     func toggleCameraPosition() {
         sessionQueue.async {
             let nextPosition: AVCaptureDevice.Position = self.currentPosition == .back ? .front : .back
+            // 切换成功后的新变焦状态，供环境状态回读使用
+            var refreshedState: ZoomState?
             do {
                 let device = try self.selectInitialDevice(for: nextPosition)
                 let newInput = try AVCaptureDeviceInput(device: device)
@@ -167,7 +171,7 @@ extension CameraManager {
                     self.currentPosition = nextPosition
                     self.configureZoomCapabilities(for: device, position: nextPosition)
                     let baseFactor = nextPosition == .front ? 1.0 : max(CGFloat(device.minAvailableVideoZoomFactor), 0.5)
-                    self.refreshZoomState(with: baseFactor, isContinuous: false)
+                    refreshedState = self.refreshZoomState(with: baseFactor, isContinuous: false)
                 } else {
                     if let active = self.activeVideoInput {
                         self.session.addInput(active)
@@ -181,6 +185,10 @@ extension CameraManager {
                         connection.videoRotationAngle = 90
                     }
                     self.configureStabilization(for: connection)
+                }
+                // 镜头切换后立即回读新设备参数（EV/对焦/白平衡），别等周期刷新
+                if let refreshedState {
+                    self.updateCameraEnvironment(device: device, zoomState: refreshedState)
                 }
             } catch {
                 return
@@ -249,13 +257,13 @@ extension CameraManager {
     }
     
     /// 根据平台能力启用视频防抖。
+    /// preferredVideoStabilizationMode 自 iOS 10 起可用（部署目标 17.0），
+    /// 之前包着 #available(iOS 13) 的写法在 iOS 13+ 分支为空，
+    /// 等于从未真正开启防抖。
     func configureStabilization(for connection: AVCaptureConnection) {
-        #if os(iOS) && !targetEnvironment(macCatalyst)
+        #if !targetEnvironment(macCatalyst)
         guard connection.isVideoStabilizationSupported else { return }
-        guard #available(iOS 13.0, *) else {
-            connection.preferredVideoStabilizationMode = .auto
-            return
-        }
+        connection.preferredVideoStabilizationMode = .auto
         #endif
     }
 }
