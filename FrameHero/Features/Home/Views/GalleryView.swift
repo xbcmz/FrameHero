@@ -5,6 +5,7 @@ struct GalleryView: View {
     @State private var selectedPhotoIndex: Int?
     @State private var isSelectionMode = false
     @State private var selectedIDs: Set<UUID> = []
+    @State private var showDeleteConfirm = false
 
     var body: some View {
         NavigationStack {
@@ -16,36 +17,48 @@ struct GalleryView: View {
                             .font(DesignSystem.Typography.largeTitle)
                             .foregroundColor(DesignSystem.Colors.textPrimary)
 
+                        Spacer()
+
                         if isSelectionMode {
-                            Spacer()
-                            Button {
-                                viewModel.deleteRecords(Array(selectedIDs))
-                                selectedIDs.removeAll()
-                                isSelectionMode = false
-                            } label: {
-                                Image(systemName: "trash")
-                                    .font(.system(size: 16, weight: .semibold))
-                                    .foregroundColor(selectedIDs.isEmpty ? DesignSystem.Colors.textTertiary : .red)
-                                    .padding(12)
-                                    .background(Circle().fill(.ultraThinMaterial))
+                            // 已选计数
+                            Text("已选 \(selectedIDs.count)")
+                                .font(DesignSystem.Typography.footnote)
+                                .foregroundColor(DesignSystem.Colors.textTertiary)
+
+                            // 全选
+                            Button("全选") {
+                                selectedIDs = Set(viewModel.records.map(\.id))
                             }
+                            .font(DesignSystem.Typography.subheadline)
+                            .foregroundColor(DesignSystem.Colors.primary)
+                            .disabled(selectedIDs.count == viewModel.records.count)
+
+                            // 删除（带确认）
+                            Button("删除") {
+                                showDeleteConfirm = true
+                            }
+                            .font(DesignSystem.Typography.subheadline.weight(.semibold))
+                            .foregroundColor(selectedIDs.isEmpty ? DesignSystem.Colors.textTertiary : .red)
                             .disabled(selectedIDs.isEmpty)
 
-                            Button {
+                            Button("取消") {
                                 isSelectionMode = false
                                 selectedIDs.removeAll()
-                            } label: {
-                                Text("取消")
-                                    .font(DesignSystem.Typography.subheadline)
-                                    .foregroundColor(DesignSystem.Colors.textPrimary)
-                                    .padding(.leading, 8)
                             }
+                            .font(DesignSystem.Typography.subheadline)
+                            .foregroundColor(DesignSystem.Colors.textPrimary)
                         } else {
-                            Spacer()
                             if !viewModel.records.isEmpty {
                                 Text("\(viewModel.records.count) 张照片")
                                     .font(DesignSystem.Typography.caption1)
                                     .foregroundColor(DesignSystem.Colors.textTertiary)
+
+                                // 显式多选入口（iOS 相册模式）
+                                Button("选择") {
+                                    isSelectionMode = true
+                                }
+                                .font(DesignSystem.Typography.subheadline.weight(.semibold))
+                                .foregroundColor(DesignSystem.Colors.primary)
                             }
                         }
                     }
@@ -78,6 +91,20 @@ struct GalleryView: View {
                     }
                 )
             }
+            .confirmationDialog(
+                "删除 \(selectedIDs.count) 张照片？",
+                isPresented: $showDeleteConfirm,
+                titleVisibility: .visible
+            ) {
+                Button("删除", role: .destructive) {
+                    viewModel.deleteRecords(Array(selectedIDs))
+                    selectedIDs.removeAll()
+                    isSelectionMode = false
+                }
+                Button("取消", role: .cancel) {}
+            } message: {
+                Text("删除后无法恢复")
+            }
         }
     }
 
@@ -88,7 +115,7 @@ struct GalleryView: View {
             Image(systemName: "info.circle.fill")
                 .font(.system(size: 12))
                 .foregroundColor(DesignSystem.Colors.primary)
-            Text("点击照片浏览 · 长按多选删除 · 进入照片可导出精美卡片")
+            Text("点击照片浏览 · 「选择」多选删除 · 进入照片可导出卡片")
                 .font(DesignSystem.Typography.caption1)
                 .foregroundColor(DesignSystem.Colors.textTertiary)
             Spacer()
@@ -136,14 +163,6 @@ struct GalleryView: View {
                     }
                 }
                 .contextMenu { contextMenu(for: record) }
-                .simultaneousGesture(
-                    LongPressGesture(minimumDuration: 0.5).onEnded { _ in
-                        if !isSelectionMode {
-                            isSelectionMode = true
-                            selectedIDs = [record.id]
-                        }
-                    }
-                )
             }
         }
     }
@@ -163,6 +182,13 @@ struct GalleryView: View {
 
     @ViewBuilder
     private func contextMenu(for record: PhotoRecord) -> some View {
+        Button {
+            isSelectionMode = true
+            selectedIDs = [record.id]
+        } label: {
+            Label("多选", systemImage: "checkmark.circle")
+        }
+
         Button(role: .destructive) {
             viewModel.deleteRecord(record.id)
         } label: {
