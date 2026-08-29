@@ -39,19 +39,19 @@ struct CompositionCoachOverlayView: View {
                 thirdsGrid
             }
 
-            // 顶部状态图标
-            VStack(spacing: 0) {
+            // 顶部集群：状态图标 + 建议 chip。
+            // 放在预览区顶部（而非底部）——底部是变焦盘/快门区，
+            // 全屏出血的预览区底边会与它们重叠
+            VStack(spacing: 8) {
                 statusIcon
                     .frame(height: 44)
                     .padding(.top, 10)
-                Spacer()
-            }
 
-            // 底部建议 chip
-            VStack(spacing: 0) {
+                if phase != .analyzing {
+                    suggestionChip
+                }
+
                 Spacer()
-                suggestionChip
-                    .padding(.bottom, 14)
             }
         }
         .animation(.easeInOut(duration: 0.25), value: phase)
