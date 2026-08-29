@@ -96,7 +96,10 @@ extension CameraManager {
     /// 读取硬件变焦能力并刷新预设、镜头列表与状态。
     func configureZoomCapabilities(for device: AVCaptureDevice, position: AVCaptureDevice.Position) {
         let minFactor = max(CGFloat(device.minAvailableVideoZoomFactor), 0.50)
-        let maxFactor = CGFloat(device.maxAvailableVideoZoomFactor)
+        // 前置摄像头没有多镜头接力，高倍数码变焦画质崩坏，
+        // 变焦范围整体封顶 2×（变焦盘、捏合手势、预设统一受控）
+        let rawMax = CGFloat(device.maxAvailableVideoZoomFactor)
+        let maxFactor = position == .front ? min(rawMax, 2.0) : rawMax
         let switchPoints = device.virtualDeviceSwitchOverVideoZoomFactors.map { CGFloat(truncating: $0) }.sorted()
         virtualDeviceSwitchPoints = switchPoints
 
