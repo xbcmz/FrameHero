@@ -377,37 +377,52 @@ struct CaptureView: View {
 
 	@ViewBuilder
 	private var professionalControlColumn: some View {
-		VStack(spacing: 14) {
+		VStack(spacing: 12) {
 			// 展开的滑杆面板（在入口按钮上方弹出）
 			if let expanded = expandedPanel {
 				expandedPanelView(for: expanded)
 					.transition(.opacity.combined(with: .scale(scale: 0.9, anchor: .trailing)))
 			}
 
-			Spacer(minLength: 12)
-
-			// 入口按钮组（仅显示设备支持的参数）
-			VStack(spacing: 14) {
+			// 入口按钮（仅显示设备支持的参数）。
+			// 面板展开时只保留当前参数的按钮（即收起入口），
+			// 避免面板+三颗按钮一起顶进顶部栏
+			if expandedPanel == nil {
 				if viewModel.cameraCapability.isoRange.upperBound > 0 {
-					proEntryButton(panel: .exposure, icon: "plusminus.circle.fill", accent: .yellow)
+					proEntryButton(panel: .exposure)
 				}
 				if viewModel.cameraCapability.supportsManualFocus {
-					proEntryButton(panel: .focus, icon: "camera.viewfinder", accent: Color(red: 0.35, green: 0.70, blue: 1.0))
+					proEntryButton(panel: .focus)
 				}
 				if viewModel.cameraCapability.supportsManualWhiteBalance {
-					proEntryButton(panel: .whiteBalance, icon: "circle.lefthalf.filled", accent: .orange)
+					proEntryButton(panel: .whiteBalance)
 				}
+			} else if let active = expandedPanel {
+				proEntryButton(panel: active)
 			}
 		}
-		.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .trailing)
+		.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
 		.padding(.trailing, 10)
-		// 垂直居中偏下，并避开底部快门区
-		.padding(.bottom, 170)
-		.padding(.top, 40)
+		// 底部拍摄区（变焦行 + 快门 + 辅助按钮）约 310pt，整列抬到其上方，
+		// 与变焦行右侧的魔法棒按钮不再重叠
+		.padding(.bottom, 320)
+	}
+
+	/// 参数对应的入口按钮样式
+	private func proPanelStyle(_ panel: ProPanel) -> (icon: String, accent: Color) {
+		switch panel {
+		case .exposure:
+			return ("plusminus.circle.fill", .yellow)
+		case .focus:
+			return ("camera.viewfinder", Color(red: 0.35, green: 0.70, blue: 1.0))
+		case .whiteBalance:
+			return ("circle.lefthalf.filled", .orange)
+		}
 	}
 
 	/// 专业参数入口按钮
-	private func proEntryButton(panel: ProPanel, icon: String, accent: Color) -> some View {
+	private func proEntryButton(panel: ProPanel) -> some View {
+		let style = proPanelStyle(panel)
 		let isActive = expandedPanel == panel
 		return Button {
 			HapticManager.shared.light()
@@ -417,12 +432,12 @@ struct CaptureView: View {
 		} label: {
 			ZStack {
 				Circle()
-					.fill(isActive ? accent : Color.black.opacity(0.45))
+					.fill(isActive ? style.accent : Color.black.opacity(0.45))
 					.frame(width: 40, height: 40)
 					.overlay(
 						Circle().stroke(Color.white.opacity(isActive ? 0.9 : 0.15), lineWidth: 1)
 					)
-				Image(systemName: icon)
+				Image(systemName: style.icon)
 					.font(.system(size: 16, weight: .medium))
 					.foregroundColor(isActive ? Color.black.opacity(0.85) : .white)
 			}
