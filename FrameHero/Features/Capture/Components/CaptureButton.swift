@@ -20,8 +20,7 @@
 //  ## UI 设计（2026-08 重设计）
 //  细白外环 + 品牌渐变内圆：
 //  - 外环：直径 84pt，白色细描边（3pt），与内圆留呼吸缝隙
-//  - 内圆：直径 68pt，蓝→紫品牌渐变（primaryGradient，与
-//    首页大按钮/AI 入口同款），顶部高光增加玻璃质感
+//  - 内圆：直径 68pt，纯白填充（iOS 相机经典样式）
 //  - 倒计时：最外圈绿色进度环 + 白色剩余秒数
 //  - 达标：绿色呼吸脉冲外圈
 //
@@ -88,29 +87,17 @@ struct CaptureButton: View {
 					.frame(width: 84, height: 84)
 					.shadow(color: .black.opacity(0.35), radius: 6, y: 2)
 
-				// 内圆：品牌渐变（与首页/AI 入口同款蓝紫）
+				// 内圆：纯白（iOS 相机经典样式）
 				Circle()
-					.fill(DesignSystem.Colors.primaryGradient)
+					.fill(Color.white)
 					.frame(width: 68, height: 68)
-					.shadow(color: DesignSystem.Colors.primary.opacity(0.45), radius: 8, y: 2)
+					.shadow(color: .black.opacity(0.3), radius: 6, y: 2)
 
-				// 内圆顶部高光，增加玻璃质感
-				Circle()
-					.fill(
-						LinearGradient(
-							colors: [.white.opacity(0.32), .clear],
-							startPoint: .top,
-							endPoint: .center
-						)
-					)
-					.frame(width: 68, height: 68)
-
-				// 倒计时剩余数字（白字压渐变，清晰醒目）
+				// 倒计时剩余数字（深字压白底）
 				if let left = countdownSecondsLeft, left > 0 {
 					Text("\(left)")
 						.font(.system(size: 30, weight: .bold, design: .rounded))
-						.foregroundColor(.white)
-						.shadow(color: .black.opacity(0.3), radius: 2, x: 0, y: 1)
+						.foregroundColor(.black.opacity(0.82))
 				}
 			}
 		}
