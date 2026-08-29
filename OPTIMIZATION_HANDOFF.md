@@ -15,6 +15,13 @@
 - 注意：`project.yml` / `generate_xcode_project.py` 已被删除，**新增 .swift 文件必须手动注册进 `LiveCapture.xcodeproj/project.pbxproj`**（PBXBuildFile + PBXFileReference + 组 children + Sources phase 四处）。
 - git 有完整历史：`7ea6b6c` 是修复前基线，随时可 diff/回滚。
 
+## 已完成（第五批 2026-08-29：移除导出卡片品牌水印）
+
+- ShareCardGenerator 去掉底部品牌水印（Logo 图标 +「构妙 · LiveCompose」标题），loadLogo() 一并删除（logo-glass-LiveCompose 图片资源保留未删）
+- 保留日期 + 拍摄参数（ISO/快门/光圈/分辨率）信息行（照片元数据非水印），日期升为主行（24pt medium 黑色）
+- bottomReserved 300 → 170，腾出的空间给照片区域（maxPhotoHeight 1020 → 1150）
+- Debug 编译验证通过
+
 ## 已完成（第四批 2026-08-29：首页重构为 AI 摄影工作台）
 
 - **删除全部静态介绍内容**（核心功能卡片、工作原理、技术栈、版本路线图、关于），首页不再复用介绍页

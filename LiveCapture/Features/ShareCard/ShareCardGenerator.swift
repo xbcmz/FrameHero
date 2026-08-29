@@ -8,7 +8,9 @@ enum ShareCardGenerator {
     private static let photoInsetHorizontal: CGFloat = 80
     private static let photoInsetVertical: CGFloat = 72
     private static let topPadding: CGFloat = 120
-    private static let bottomReserved: CGFloat = 300
+    // 底部只保留日期 + 拍摄参数两行信息（品牌水印已按需求移除），
+    // 空间还给了照片区域
+    private static let bottomReserved: CGFloat = 170
     private static let maxPhotoDimension: CGFloat = 1920
 
     private static func scaledPhoto(from photo: UIImage) -> UIImage? {
@@ -22,10 +24,6 @@ enum ShareCardGenerator {
         defer { UIGraphicsEndImageContext() }
         photo.draw(in: CGRect(origin: .zero, size: newSize))
         return UIGraphicsGetImageFromCurrentImageContext() ?? photo
-    }
-
-    private static func loadLogo() -> UIImage? {
-        return UIImage(named: "logo-glass-LiveCompose")
     }
 
     static func generate(
@@ -71,7 +69,6 @@ enum ShareCardGenerator {
         format.opaque = true
         let renderer = UIGraphicsImageRenderer(size: cardSize, format: format)
 
-        let logo = loadLogo()
         let dateStr = formattedDate(date)
 
         return renderer.image { ctx in
@@ -96,45 +93,23 @@ enum ShareCardGenerator {
             photoBgPath.lineWidth = 1
             photoBgPath.stroke()
 
-            // 底部水印区域
+            // 底部信息区：日期 + 拍摄参数（无品牌水印）
             let bottomY = photoRect.maxY + 36
 
-            // Logo
-            if let logo {
-                let logoSize: CGFloat = 56
-                let logoRect = CGRect(x: (cardWidth - logoSize) / 2, y: bottomY, width: logoSize, height: logoSize)
-                logo.draw(in: logoRect)
-            }
-
-            // 标题
-            let titleY = bottomY + 64
-            let titleText = "构妙 · LiveCompose"
-            let titleFont = UIFont.systemFont(ofSize: 34, weight: .bold)
-            let titleAttr: [NSAttributedString.Key: Any] = [
-                .font: titleFont,
-                .foregroundColor: UIColor.black
-            ]
-            let titleSize = titleText.size(withAttributes: titleAttr)
-            titleText.draw(
-                in: CGRect(x: (cardWidth - titleSize.width) / 2, y: titleY, width: titleSize.width, height: titleSize.height),
-                withAttributes: titleAttr
-            )
-
             // 日期
-            let dateFont = UIFont.systemFont(ofSize: 22, weight: .regular)
+            let dateFont = UIFont.systemFont(ofSize: 24, weight: .medium)
             let dateAttr: [NSAttributedString.Key: Any] = [
                 .font: dateFont,
-                .foregroundColor: UIColor(white: 0.4, alpha: 1)
+                .foregroundColor: UIColor.black
             ]
             let dateSize = dateStr.size(withAttributes: dateAttr)
-            let dateY = titleY + titleSize.height + 8
             dateStr.draw(
-                in: CGRect(x: (cardWidth - dateSize.width) / 2, y: dateY, width: dateSize.width, height: dateSize.height),
+                in: CGRect(x: (cardWidth - dateSize.width) / 2, y: bottomY, width: dateSize.width, height: dateSize.height),
                 withAttributes: dateAttr
             )
 
             // 参数行
-            let paramsY = dateY + dateSize.height + 14
+            let paramsY = bottomY + dateSize.height + 14
             var paramParts: [String] = []
             if let method = detectionMethod { paramParts.append(method) }
             if let iso { paramParts.append("ISO \(Int(iso))") }
