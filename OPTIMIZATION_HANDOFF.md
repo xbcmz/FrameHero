@@ -1,11 +1,11 @@
 # LiveCapture 优化交接文档
 
 > 用途：开新对话时让 AI 先读本文件（说「先读 OPTIMIZATION_HANDOFF.md」即可接上进度）。
-> 更新时间：2026-08-29（第五批完成，项目已更名为构图侠 FrameHero）。GitHub 已同步（origin: git@github.com:xbcmz/LiveCapture.git，分支 main；仓库待用户手动改名 FrameHero）。
+> 更新时间：2026-08-29（第五批完成，项目已更名为 FrameHero（App 名不用中文））。GitHub 已同步（origin: git@github.com:xbcmz/LiveCapture.git，分支 main；仓库待用户手动改名 FrameHero）。
 
 ## 项目位置与验证命令
 
-- 项目名：**构图侠 FrameHero**（原名 LiveCapture，2026-08-29 全量更名，见第五批）
+- 项目名：**FrameHero**（原名 LiveCapture，2026-08-29 全量更名，见第五批）
 - 路径：`/Users/mr./Library/Application Support/TRAE SOLO CN/ModularData/ai-agent/work-mode-projects/6a905bc7582b3f8001d2a591/LiveCapture-main`
   （外层文件夹还叫 LiveCapture-main，是 TRAE 工作区目录，建议用户自行在 IDE 里改名）
 - 编译验证（已验证可用，无签名）：
@@ -17,12 +17,12 @@
 - 注意：`project.yml` / `generate_xcode_project.py` 已被删除，**新增 .swift 文件必须手动注册进 `LiveCapture.xcodeproj/project.pbxproj`**（PBXBuildFile + PBXFileReference + 组 children + Sources phase 四处）。
 - git 有完整历史：`7ea6b6c` 是修复前基线，随时可 diff/回滚。
 
-## 已完成（第五批 2026-08-29：项目更名为构图侠 FrameHero，全量）
+## 已完成（第五批 2026-08-29：项目更名为 FrameHero，全量）
 
-- 命名：中文名 **构图侠**（App 显示名/首页标题），英文 **FrameHero**（工程/仓库/代码标识）；「构图侠」经检索无同名 App，排除出片（已有竞品「出片相机」）
-- 全量替换范围：~50 个 swift 文件的头部注释与标识、队列标签（framehero.*）、KeychainStore 服务名（com.xbcmz.FrameHero）、PhotoStorageService 存储子目录（FrameHero）、Info.plist（显示名=构图侠、权限文案）、pbxproj（Target/Product/Bundle ID 全部 FrameHero，com.xbcmz.FrameHero）
+- 命名：App 名统一用英文 **FrameHero**（显示名/首页标题/工程/仓库/代码标识），不用中文名；「FrameHero」候选名检索无同名 App，排除出片（已有竞品「出片相机」）
+- 全量替换范围：~50 个 swift 文件的头部注释与标识、队列标签（framehero.*）、KeychainStore 服务名（com.xbcmz.FrameHero）、PhotoStorageService 存储子目录（FrameHero）、Info.plist（显示名=FrameHero、权限文案）、pbxproj（Target/Product/Bundle ID 全部 FrameHero，com.xbcmz.FrameHero）
 - 目录重命名：源码目录 LiveCapture/ → FrameHero/、LiveCapture.xcodeproj → FrameHero.xcodeproj、LiveCaptureApp.swift → FrameHeroApp.swift
-- 首页大标题「AI 摄影助手」→「构图侠」；README.md / README_CN.md 全局改名 + 修正过时内容（配置方式改为设置页 Keychain、目录树、导航、ZoomDialView、Phase 8 完成态），上游 LiveCompose 署名保留
+- 首页大标题「AI 摄影助手」→「FrameHero」；README.md / README_CN.md 全局改名 + 修正过时内容（配置方式改为设置页 Keychain、目录树、导航、ZoomDialView、Phase 8 完成态），上游 LiveCompose 署名保留
 - ⚠️ Bundle ID 已变：设备上旧 App（LiveCapture）需卸载重装，照片记录与 Keychain 中的 API Key 不会迁移（用户已确认接受）
 - 用户待办：①GitHub 仓库改名（gh CLI 未安装：网页 Settings → General → Rename，或安装 gh 后 `gh repo rename FrameHero`；GitHub 会自动重定向旧地址，本地 remote 无需改）②TRAE 工作区外层文件夹名 ③App 图标重绘
 

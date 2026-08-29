@@ -5,7 +5,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>
-	<string>构图侠</string>
+	<string>FrameHero</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -23,9 +23,9 @@
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>NSCameraUsageDescription</key>
-	<string>构图侠 需要使用相机来实时分析构图并提供拍摄建议。</string>
+	<string>FrameHero 需要使用相机来实时分析构图并提供拍摄建议。</string>
 	<key>NSPhotoLibraryAddUsageDescription</key>
-	<string>构图侠 需要保存分享卡片到您的相册。</string>
+	<string>FrameHero 需要保存分享卡片到您的相册。</string>
 	<key>UILaunchScreen</key>
 	<dict>
 		<key>UIColorName</key>

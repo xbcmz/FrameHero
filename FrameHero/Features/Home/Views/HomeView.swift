@@ -85,7 +85,7 @@ struct HomeView: View {
             Text("\(greetingText) 👋")
                 .font(DesignSystem.Typography.subheadline)
                 .foregroundColor(DesignSystem.Colors.textSecondary)
-            Text("构图侠")
+            Text("FrameHero")
                 .font(DesignSystem.Typography.largeTitle)
                 .foregroundColor(DesignSystem.Colors.textPrimary)
             Text("让 AI 帮你拍出更好的照片")

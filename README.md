@@ -1,4 +1,4 @@
-# FrameHero 构图侠 - AI Photography Assistant
+# FrameHero - AI Photography Assistant
 
 English | [简体中文](README_CN.md)
 
@@ -407,7 +407,7 @@ MIT License — see [LICENSE](LICENSE) for details.
 
 ## Acknowledgments
 
-Formerly named LiveCapture, now renamed **FrameHero 构图侠**.
+Formerly named LiveCapture, now renamed **FrameHero**.
 
 Based on the [LiveCompose](https://github.com/LiveCompose) open-source project. Original composition detection models (AdaCrop student/teacher) and motion tracking system are used with modifications.
 

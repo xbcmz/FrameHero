@@ -1,4 +1,4 @@
-# 构图侠 FrameHero - AI 构图相机
+# FrameHero - AI 构图相机
 
 [English](README.md) | 简体中文
 
@@ -407,7 +407,7 @@ MIT License — 详见 [LICENSE](LICENSE)。
 
 ## 致谢
 
-项目原名 LiveCapture，现更名 **构图侠 FrameHero**。
+项目原名 LiveCapture，现更名 **FrameHero**。
 
 基于 [LiveCompose](https://github.com/LiveCompose) 开源项目。原始的构图检测模型（AdaCrop student/teacher）和运动追踪系统在使用时做了修改。
 
