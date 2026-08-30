@@ -31,10 +31,17 @@ final class AIConfigurationStore: ObservableObject {
     static let defaultBaseURL = "https://api.deepseek.com/v1"
     static let chatModel = "deepseek-chat"
     static let reasonerModel = "deepseek-reasoner"
+    static let defaultVisionModel = "deepseek-v4-flash-vision-exp"
 
+    /// 文本模型（拍后点评等云端文本能力）
     static let availableModels: [(id: String, name: String, description: String)] = [
         (chatModel, "通用 V3", "响应快，适合实时建议"),
         (reasonerModel, "深度思考 R1", "更细腻但更慢，消耗更多 token")
+    ]
+
+    /// 视觉模型（图片理解，独立于文本模型的能力线）
+    static let availableVisionModels: [(id: String, name: String, description: String)] = [
+        (defaultVisionModel, "V4 Flash Vision", "实验版多模态：看懂画面，输出结构化场景分析")
     ]
 
     private static let keychainAccount = "deepseek.apiKey"
@@ -42,6 +49,7 @@ final class AIConfigurationStore: ObservableObject {
         static let cloudEnabled = "ai.cloudAIEnabled"
         static let baseURL = "ai.baseURL"
         static let model = "ai.model"
+        static let visionModel = "ai.visionModel"
     }
 
     // MARK: - 状态
@@ -56,9 +64,14 @@ final class AIConfigurationStore: ObservableObject {
         didSet { UserDefaults.standard.set(baseURL, forKey: DefaultsKey.baseURL) }
     }
 
-    /// 模型 ID
+    /// 文本模型 ID
     @Published var model: String {
         didSet { UserDefaults.standard.set(model, forKey: DefaultsKey.model) }
+    }
+
+    /// 视觉模型 ID（图片理解，独立于文本模型的能力线）
+    @Published var visionModel: String {
+        didSet { UserDefaults.standard.set(visionModel, forKey: DefaultsKey.visionModel) }
     }
 
     /// API Key（Keychain 持久化，内存中仅保留副本供同步读取）
@@ -83,6 +96,11 @@ final class AIConfigurationStore: ObservableObject {
 
         let storedModel = defaults.string(forKey: DefaultsKey.model)
         self.model = (storedModel?.isEmpty == false) ? storedModel! : Self.chatModel
+
+        let storedVision = defaults.string(forKey: DefaultsKey.visionModel)
+        self.visionModel = (storedVision?.isEmpty == false)
+            ? storedVision!
+            : Self.defaultVisionModel
 
         self.apiKey = KeychainStore.load(account: Self.keychainAccount) ?? ""
     }
@@ -148,6 +166,7 @@ final class AIConfigurationStore: ObservableObject {
     func resetAdvancedSettings() {
         baseURL = Self.defaultBaseURL
         model = Self.chatModel
+        visionModel = Self.defaultVisionModel
     }
 }
 

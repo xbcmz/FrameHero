@@ -249,29 +249,59 @@ struct SettingsView: View {
     // MARK: 模型行
 
     private var modelRow: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 10) {
-                Image(systemName: "cpu")
-                    .font(.system(size: 15))
-                    .foregroundColor(DesignSystem.Colors.primary)
-                    .frame(width: 24)
-                Text("建议模型")
-                    .font(DesignSystem.Typography.headline)
-                    .foregroundColor(DesignSystem.Colors.textPrimary)
-                Spacer()
-                Picker("模型", selection: $aiConfig.model) {
-                    ForEach(AIConfigurationStore.availableModels, id: \.id) { info in
-                        Text(info.name).tag(info.id)
+        VStack(alignment: .leading, spacing: 12) {
+            // 文本模型（云端文本能力：拍后点评等）
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(spacing: 10) {
+                    Image(systemName: "text.bubble")
+                        .font(.system(size: 15))
+                        .foregroundColor(DesignSystem.Colors.primary)
+                        .frame(width: 24)
+                    Text("文本模型")
+                        .font(DesignSystem.Typography.headline)
+                        .foregroundColor(DesignSystem.Colors.textPrimary)
+                    Spacer()
+                    Picker("文本模型", selection: $aiConfig.model) {
+                        ForEach(AIConfigurationStore.availableModels, id: \.id) { info in
+                            Text(info.name).tag(info.id)
+                        }
                     }
+                    .pickerStyle(.menu)
                 }
-                .pickerStyle(.menu)
+                Text(AIConfigurationStore.availableModels
+                    .first { $0.id == aiConfig.model }?.description ?? "")
+                    .font(DesignSystem.Typography.caption1)
+                    .foregroundColor(DesignSystem.Colors.textTertiary)
+                    .padding(.leading, 34)
             }
 
-            Text(AIConfigurationStore.availableModels
-                .first { $0.id == aiConfig.model }?.description ?? "")
-                .font(DesignSystem.Typography.caption1)
-                .foregroundColor(DesignSystem.Colors.textTertiary)
-                .padding(.leading, 34)
+            Divider()
+                .background(DesignSystem.Colors.backgroundTertiary)
+
+            // 视觉模型（图片理解：AI 视觉测试 / 未来构图方案）
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(spacing: 10) {
+                    Image(systemName: "eye")
+                        .font(.system(size: 15))
+                        .foregroundColor(DesignSystem.Colors.primary)
+                        .frame(width: 24)
+                    Text("视觉模型")
+                        .font(DesignSystem.Typography.headline)
+                        .foregroundColor(DesignSystem.Colors.textPrimary)
+                    Spacer()
+                    Picker("视觉模型", selection: $aiConfig.visionModel) {
+                        ForEach(AIConfigurationStore.availableVisionModels, id: \.id) { info in
+                            Text(info.name).tag(info.id)
+                        }
+                    }
+                    .pickerStyle(.menu)
+                }
+                Text(AIConfigurationStore.availableVisionModels
+                    .first { $0.id == aiConfig.visionModel }?.description ?? "")
+                    .font(DesignSystem.Typography.caption1)
+                    .foregroundColor(DesignSystem.Colors.textTertiary)
+                    .padding(.leading, 34)
+            }
         }
         .padding(.vertical, 14)
         .padding(.horizontal, DesignSystem.Spacing.medium)

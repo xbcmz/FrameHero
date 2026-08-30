@@ -91,6 +91,7 @@
 - **Phase 0.5**：`VisionAIConfiguration`——provider/model（deepseek-v4-flash-vision-exp）/baseURL/apiKey 集中管理，模型名零散硬编码为零；上层只依赖 VisionAIService 协议
 - VM 新增 `captureFrameForVision`（一次性取帧，不持有缓冲、不干扰 AI 会话状态机）；菜单入口仅云端配置就绪时出现
 - ⚠️ 待真机验证：exp 模型的模型 ID 字符串与多模态消息格式（当前按 OpenAI 兼容 text+image_url 实现；若平台要求其他字段，只需改 DeepSeekVisionService 一处）
+- **视觉模型已纳入模型选择**（真机测试通过后的跟进）：设置页「AI 助手 → 模型」拆为两条线——文本模型（通用 V3/深度思考 R1，拍后点评用）+ **视觉模型（V4 Flash Vision，图片理解用）**，各自独立持久化（ai.visionModel）；`VisionAIConfiguration.current()` 读取用户选择；后续上新的视觉模型只需往 `availableVisionModels` 加一条
 
 ## 版本基线与分支约定
 

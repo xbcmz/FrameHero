@@ -29,19 +29,21 @@ import Foundation
 struct VisionAIConfiguration {
     /// 提供方显示名
     var provider: String = "DeepSeek"
-    /// 视觉模型 ID（DeepSeek API 平台的实验版视觉模型）
-    var model: String = "deepseek-v4-flash-vision-exp"
+    /// 视觉模型 ID（来自设置页「AI 助手 → 视觉模型」选择）
+    var model: String = AIConfigurationStore.defaultVisionModel
     /// 接口基地址（与文本服务共用同一配置，支持自建代理）
     var baseURL: String
     /// API Key（与文本服务共用同一把 Key）
     var apiKey: String
 
-    /// 当前可用配置：复用全局 AI 配置的 Key 与接口地址。
+    /// 当前可用配置：复用全局 AI 配置的 Key、接口地址与用户选择的视觉模型。
     /// 未配置 Key 时返回 nil（上层引导用户先去设置）。
     static func current() -> VisionAIConfiguration? {
-        guard let key = AIConfigurationStore.shared.effectiveAPIKey else { return nil }
+        let store = AIConfigurationStore.shared
+        guard let key = store.effectiveAPIKey else { return nil }
         return VisionAIConfiguration(
-            baseURL: AIConfigurationStore.shared.baseURL,
+            model: store.visionModel,
+            baseURL: store.baseURL,
             apiKey: key
         )
     }
