@@ -53,6 +53,17 @@ Shoot (optional auto-capture countdown)
 - **Subject continuity**: frame-to-frame IoU matching keeps the tracked subject stable among similar people
 - **Scene presets**: night/food/landscape scenes automatically shift camera parameter preferences (only touches AI-Auto parameters, never ones you locked manually)
 - **Completion ritual**: marker turns green and shrinks + third-lines fade + shutter pulse; with auto-capture on, a countdown ring with escalating haptics appears — **hand-shake cancels it** to avoid blurred shots
+- **Local-first + cloud enhancement** (Settings → AI Assistant → Composition Analysis Mode): in `auto` mode the local rule-based plans render **instantly** (no waiting on network round-trip); if a cloud (DeepSeek) response with richer scene reasoning arrives before you pick a plan, the UI seamlessly upgrades to it. `localOnly` skips the cloud call entirely; `cloudOnly` always waits for the network (with automatic local fallback on failure/timeout). A per-session generation counter discards any stale cloud response that arrives after you've already started guidance or started a new session.
+
+## Capture Assistance
+
+A handful of always-on helpers that work **even in plain-camera mode, with no AI composition session running**:
+
+- **Persistent horizon line**: live device roll drives a horizon reference line in the viewfinder at all times (not just during AI guidance); tilts past 2.5° turn it yellow.
+- **Real-time exposure risk hints**: 1Hz-throttled highlight/shadow clipping analysis on the live preview; overexposed/underexposed banners appear with a **one-tap ±1EV fix** button that reuses the existing exposure-bias control.
+- **Self-timer**: classic 3s/10s countdown from the top toolbar, independent from (and mutually exclusive with) the AI auto-capture countdown, reusing the same countdown-ring UI and haptic pattern.
+- **Post-capture blur check**: a Laplacian-variance sharpness pass runs right after a single shot lands; if it looks blurry, a banner offers **one-tap retake** (deletes the blurry shot, fires the shutter again).
+- **Burst best-shot**: long-press the shutter to burst-capture; on release, all frames in that burst are scored (sharpness first, then composition score if an AI session was active) and the sharpest/best one is starred in the gallery grid.
 
 ## Pro Camera Controls (three-state mechanism)
 
@@ -76,11 +87,14 @@ Each parameter has an independent three-state switch: **AI Auto ✨ / Manual �
 
 - 3-column grid + fullscreen browser + multi-select delete (select mode / context menu, with delete confirmation)
 - Two export styles: **original photo** (raw JPEG bytes, no re-encoding) or **info card** (photo + date + EXIF, watermark-free)
+- **Import from the system photo library** via `PhotosPicker` (up to 30 at once) — no full-library permission prompt required, since the picker itself only hands back what you explicitly select
+- **AI critique, local-first**: tap any photo → instant on-device critique (composition / light / subject, scored via Vision framework — face/saliency/exposure heuristics) with zero network dependency; if cloud AI is configured, a richer DeepSeek Vision critique can additionally be requested and is persisted alongside the local one
+- Score badges on thumbnails prefer the saved critique score, falling back to the composition score captured at shutter time; a ⭐ badge marks the best shot picked out of a burst
 
 ## Settings
 
-- **AI Assistant**: composition-entry toggle; cloud AI (DeepSeek) reserved — API key stored in the system **Keychain**, connection test (zero token cost), model choice (V3 chat / R1 reasoner), custom base URL (self-hosted proxy)
-- **Capture prefs**: auto-capture toggle, capture delay, composition-engine tier, appearance
+- **AI Assistant**: composition-entry toggle; cloud AI (DeepSeek) reserved — API key stored in the system **Keychain**, connection test (zero token cost), model choice (V3 chat / R1 reasoner), custom base URL (self-hosted proxy); **Composition Analysis Mode** picker (`auto` / `localOnly` / `cloudOnly`) to compare local-only speed against cloud-enhanced plans
+- **Capture prefs**: auto-capture toggle, capture delay, self-timer, composition-engine tier, appearance
 
 ## AI vs On-Device Responsibilities
 
@@ -121,10 +135,22 @@ Each parameter has an independent three-state switch: **AI Auto ✨ / Manual �
 ### Distance estimation
 `CaptureViewModel.distanceEstimateText` buckets `person.heightRatio × zoomState.currentFactor` (subject's on-screen height ratio scaled by current zoom) into coarse "~5m / 3-5m / 2m / 1m / <0.5m" hints — a cheap, model-free heuristic that only needs the person bounding box already produced by the tracking pipeline. Combined with the AI plan's `camera_action.distance` (`closer`/`keep`/`farther`), this is what drives "move closer / step back" guidance.
 
+### Local-first + cloud enhancement pipeline
+`CaptureViewModel` runs local plan generation unconditionally and immediately on session start; the cloud request (if `activeAnalysisMode != .localOnly`) is fired in parallel and, on success, **replaces** the displayed plans only if the user hasn't picked one yet and the session hasn't advanced — guarded by an incrementing `aiSessionGeneration` counter captured at request time and compared on completion, so a slow cloud response from a superseded/cancelled session is silently dropped instead of corrupting current UI state.
+
+### Local photo critique engine
+`LocalPhotoCritiqueEngine` (Core/AI/Vision) scores a photo purely on-device: Vision face/saliency detection for subject framing, a luminance-histogram pass for exposure/backlighting, and simple rule-of-thirds distance checks for composition — combined into a 0-100 score plus tagged strengths/improvements, in well under a second with no network call. `PhotoCritique` is `Codable` with a `source` field (`local` / `cloud`) and is persisted on `PhotoRecord`, so re-opening a photo doesn't re-run analysis.
+
+### Capture-assistance heuristics
+- `BlurDetector` (Core/AI/Vision): classic 3×3 Laplacian-kernel convolution over a downscaled (~480px) grayscale thumbnail; variance below threshold ⇒ likely blurry. Runs off the critical path, right after the JPEG lands on disk.
+- `ExposureAnalyzer` (Core/Camera): samples the Y-plane of the live preview's pixel buffer directly (no CIImage/Vision overhead), throttled to 1Hz, and flags overexposed/underexposed frames by highlight/shadow clipping ratio.
+- Burst grouping: every shutter press during a long-press burst shares one `burstID` on `PhotoRecord`; releasing the shutter schedules a short delay (to let in-flight saves/blur-checks land) before ranking the group by sharpness-then-composition-score and flagging the winner as `isBurstBest`.
+
 ### Concurrency model
-Every background worker owns exactly one serial queue and a **queue-confined mirror** of any state it needs to branch on internally; `@Published` properties are write-only outputs towards the main thread and must never be read back from a background queue (async main writes race with background reads). This project-wide rule was formalized after fixing two real races:
+Every background worker owns exactly one serial queue and a **queue-confined mirror** of any state it needs to branch on internally; `@Published` properties are write-only outputs towards the main thread and must never be read back from a background queue (async main writes race with background reads). This project-wide rule was formalized after fixing several real races:
 - `MotionStabilityMonitor`: hysteresis must branch on the internal `stableState` mirror (mutated only on `dataQueue`), not the `@Published isStable` (mutated only on main); `largeMotionFlag`'s delayed reset was moved from `DispatchQueue.main.asyncAfter` back onto `dataQueue` for the same reason.
 - `SceneClassifier`: `classify()` runs on the camera's `videoOutputQueue`, while `reset()` is triggered by main-thread UI actions; both now go through a dedicated `stateQueue` to serialize access to `votes`/`currentDecision`.
+- `CaptureViewModel`'s exposure-risk check: `lastExposureCheckTime` (rate-limit bookkeeping) stays strictly confined to the camera's `videoOutputQueue`, while `exposureWarning`/`exposureSuppressedUntil` stay strictly confined to the main thread — the two never cross, so the background sampler and a main-thread "one-tap fix" tap can never race on the same field. The `AVCapturePhotoOutput` delegate callback (whose thread Apple doesn't guarantee) is also hopped onto the main thread before touching any burst/session bookkeeping.
 
 ## Project Layout
 
@@ -135,19 +161,23 @@ FrameHero/
 ├── Assets.xcassets/                        # Icon (light/dark/tinted)
 ├── Core/
 │   ├── AI/
-│   │   ├── AIConfigurationStore.swift      # AI config hub (+ usage counter)
+│   │   ├── AIConfigurationStore.swift      # AI config hub (+ usage counter + analysis mode)
 │   │   ├── KeychainStore.swift             # Keychain wrapper (API key)
 │   │   ├── APIKeyProvider.swift            # API key reader (Keychain first)
 │   │   ├── DeepSeekService.swift           # DeepSeek API (+ connection test)
 │   │   ├── MockPhotographer.swift          # Offline mock advice
 │   │   ├── AIAdviceProvider.swift          # Advice provider protocol
-│   │   └── PhotographyAdvisor.swift        # Analysis orchestrator
+│   │   ├── PhotographyAdvisor.swift        # Analysis orchestrator
+│   │   └── Vision/
+│   │       ├── PhotoCritique.swift             # Post-shot critique model (local/cloud)
+│   │       └── LocalPhotoCritiqueEngine.swift  # On-device critique (Vision framework)
 │   ├── Camera/
 │   │   ├── CameraManager.swift             # Session lifecycle (+Session/Zoom/Photo/
 │   │   │                                   #   VideoOutput/Control/Capability/Models)
 │   │   ├── CameraCapability.swift          # Hardware capability + environment model
 │   │   ├── CameraControlEngine.swift       # Strategy → hardware (differential apply)
 │   │   ├── PhotographyStrategy.swift       # Semantic three-state strategy
+│   │   ├── ExposureAnalyzer.swift          # Live exposure risk (Y-plane sampling)
 │   │   └── CameraPreviewView.swift         # Preview layer
 │   ├── Composition/
 │   │   ├── CompositionPlan.swift           # Plan model + local plan generator
@@ -161,7 +191,7 @@ FrameHero/
 │   │   └── AestheticCropDetector.swift     # Vision face/body raw detections (feeds CompositionEngine)
 │   ├── Models/                             # AdaCrop CoreML models (student/teacher)
 │   ├── Motion/MotionStabilityMonitor.swift # Gyro stability
-│   └── Storage/                            # Photo store (score saved per shot)
+│   └── Storage/                            # Photo store (score, critique, burst grouping)
 ├── Features/
 │   ├── Main/MainTabView.swift              # TabBar + AppRouter
 │   ├── Capture/
@@ -247,8 +277,11 @@ A: Inside the app sandbox (Application Support), not the system library. Export 
 - [x] **Phase 10** — group awareness / subject continuity / AdaCrop engine tiers
 - [x] **Post-shot review** — DeepSeek Vision structured critique (score / strengths / improvements)
 - [x] **VLM plan provider** — scene-aware plans from DeepSeek Vision
-- [x] **Pose level** — CoreMotion roll → horizon line + tilt coaching (ARKit optional later)
+- [x] **Pose level** — CoreMotion roll → horizon line + tilt coaching (ARKit optional later), now **always-on** rather than gated to the AI-guidance phase
 - [x] **Auto focal switch** — plan focal suggestions execute on selection
+- [x] **Local-first + cloud enhancement** — local plans render instantly, cloud plans upgrade the UI in place when they arrive in time
+- [x] **Photo library import + local-first AI critique** — `PhotosPicker` import, on-device Vision-based critique with optional DeepSeek Vision enhancement
+- [x] **Capture assistance suite** — post-shot blur retake, self-timer, real-time exposure-risk hints with one-tap fix, burst best-shot picking
 
 ## Contributing
 
