@@ -1,58 +1,173 @@
-# FrameHero - AI Photography Assistant
+# FrameHero - AI Composition Camera
 
 English | [简体中文](README_CN.md)
 
-FrameHero is an iOS AI photography assistant that combines real-time composition analysis with intelligent camera control. It analyzes the live preview, provides composition guidance, and automatically adjusts camera parameters (exposure, focus, white balance, lens selection) based on the scene — letting AI handle the technical details so you can focus on framing the shot.
+FrameHero is an iOS AI composition camera built around one question:
 
-Based on the [LiveCompose](https://github.com/LiveCompose) open-source project, with significant architecture upgrades for professional camera control.
+> **"Given this scene, how should I shoot it better?"**
+
+Open the camera → tap **AI Composition** → AI analyzes the scene and proposes **1–3 composition plans** → pick one → follow the live guidance → **composition achieved** → shoot. The AI thinks, the phone judges in real time, you just move the phone.
+
+Based on the [LiveCompose](https://github.com/LiveCompose) open-source project, with deeply rebuilt camera-control and composition-guidance architecture.
 
 ![Platform](https://img.shields.io/badge/Platform-iOS-blueviolet)
-![Framework](https://img.shields.io/badge/Framework-SwiftUI%20%2B%20AVFoundation%20%2B%20CoreML-red)
+![Framework](https://img.shields.io/badge/Framework-SwiftUI%20%2B%20AVFoundation%20%2B%20CoreML%20%2B%20Vision-red)
 ![License](https://img.shields.io/badge/License-MIT-lightgrey)
-![AI](https://img.shields.io/badge/AI-DeepSeek%20%2B%20Local%20Engine-blue)
+![AI](https://img.shields.io/badge/AI-Local%20Realtime%20%2B%20Cloud%20Optional-blue)
 
-> 📸 **Screenshots coming soon** — PRs welcome!
+## The Core Experience: AI Photographer
 
-## Key Features
+Tap the ✨ button next to the shutter — the AI photographer starts working:
 
-### 🎯 AI Composition Guidance
-- **Real-time analysis** of camera preview using CoreML and Vision frameworks
-- **Magic Wand mode** — live guidance arrows and alignment dots to help you frame the shot
-- **Two detection engines** — CoreML (AdaCrop student/teacher models) and Vision (face/body/saliency)
-- **Gyroscope tracking** — device motion compensation for stable composition alignment
-- **Rule of thirds / center composition** — multiple composition targets
+```text
+Analyze the scene (~1s, fully on-device)
+    ↓
+"AI Photographer · Found 3 ways to shoot this"
+    ┌──────────────────────────┐
+    │ Person & Scene  Spatial  │  ← recommended (green)
+    ├──────────────────────────┤
+    │ Close-up  Emphasize      │
+    ├──────────────────────────┤
+    │ Negative Space  Minimal  │
+    └──────────────────────────┘
+    ↓ pick one
+Target marker ring + one-line suggestion appear
+    ↓ follow the guidance
+Subject enters the ring → turns green ✓ done
+    ↓
+Shoot (optional auto-capture countdown)
+```
 
-### 📷 Intelligent Camera Control
+- **Plans are structured**: composition type / target subject position / distance / focal-length suggestion / confidence — not vague sentences
+- **Seven composition types in MVP**: rule of thirds · centered symmetry · leading lines · framing · foreground layering · negative space · environment portrait
+- **Scene recognition**: portrait / food / night / landscape / street / document (Vision classifier with multi-frame voting, offline)
 
-| Parameter | Control | AI Support |
-|-----------|---------|------------|
-| **Exposure** | EV bias slider (±2 EV) | Brightness preference (darker/brighter/preserve highlights/night) |
-| **Focus** | Manual focus slider (0-1) | Auto / subject lock / macro |
-| **White Balance** | Color temp slider (2000K-10000K) | Auto / warm / cool / natural |
-| **Lens** | Zoom ring + preset switching | Ultra-wide / wide / telephoto auto-select |
-| **Depth** | Semantic preference | Shallow / deep / auto |
+## Smart Details
 
-### ⚙️ Three-State Control Mechanism
+- **Three composition-engine tiers** (Settings → Composition Engine):
+  - **Vision** — rule-based target positions, no model
+  - **Fast** — AdaCrop Student model predicts the "best-composition crop" once to calibrate plan targets
+  - **Pro** — AdaCrop Teacher model, full precision
+- **Group awareness**: with 2+ people, switches to group plans (centered group / full panorama / front-row close-up), tracking the group bounding box
+- **Leading room**: detects face direction, target automatically leaves looking-space
+- **Subject continuity**: frame-to-frame IoU matching keeps the tracked subject stable among similar people
+- **Scene presets**: night/food/landscape scenes automatically shift camera parameter preferences (only touches AI-Auto parameters, never ones you locked manually)
+- **Completion ritual**: marker turns green and shrinks + third-lines fade + shutter pulse; with auto-capture on, a countdown ring with escalating haptics appears — **hand-shake cancels it** to avoid blurred shots
 
-Every camera parameter has an independent three-state control:
+## Pro Camera Controls (three-state mechanism)
 
-| Mode | Icon | Description | AI Can Override? |
-|------|------|-------------|------------------|
-| **AI Auto** | ✨ | AI adjusts based on scene analysis | Yes |
-| **Manual** | 🎚 | User controls via sliders | No |
-| **Locked** | 🔒 | Lock current value | No |
+| Parameter | Manual control | AI-Auto mode |
+|-----------|---------------|--------------|
+| **Exposure** | EV slider (±2 EV, shows live hardware value) | brightness preference (darker/brighter/highlights/night) |
+| **Focus** | manual focus slider (0–1) | subject lock / macro |
+| **White balance** | temperature slider (2000K–10000K) | warm / cool / natural |
+| **Lens** | zoom dial (preset pills + long-press fine dial) | ultra-wide / wide / telephoto suggestions |
 
-> 💡 **Pro tip**: For night shots, lock white balance to cool tones and let AI auto-control exposure and focus for the best results.
+Each parameter has an independent three-state switch: **AI Auto ✨ / Manual 🎚 / Locked 🔒** — let AI drive exposure while you lock white balance, without interference. Sliders show the camera's real hardware values in AI-Auto mode.
 
-### 🧠 Two-Layer AI Strategy
+## Home Workbench
 
-- **Cloud AI (DeepSeek)** — scene-semantic intelligent judgment, highest priority
-- **Local Engine (rule-based)** — based on composition analysis, works offline
-- **Smart merge** — cloud AI only overrides fields it's confident about, the rest falls to the local engine
+- Greeting header + large "Start AI Capture" entry
+- Assistant status card: composition guidance / scene recognition / person detection readiness
+- Recent shots carousel with the **composition score captured at shutter time**
+- "Today" stats: photos / AI advice count / average score
 
-## Quick Start
+## Gallery
 
-### 1. Install
+- 3-column grid + fullscreen browser + multi-select delete (select mode / context menu, with delete confirmation)
+- Two export styles: **original photo** (raw JPEG bytes, no re-encoding) or **info card** (photo + date + EXIF, watermark-free)
+
+## Settings
+
+- **AI Assistant**: composition-entry toggle; cloud AI (DeepSeek) reserved — API key stored in the system **Keychain**, connection test (zero token cost), model choice (V3 chat / R1 reasoner), custom base URL (self-hosted proxy)
+- **Capture prefs**: auto-capture toggle, capture delay, composition-engine tier, appearance
+
+## AI vs On-Device Responsibilities
+
+```text
+                 Camera (AVFoundation)
+                        │
+     [tap AI Composition] one-shot analysis (~1s, on-device)
+                        │
+      ┌─────────────────┼──────────────────┐
+      ↓                 ↓                  ↓
+  Scene classifier   Person/face      AdaCrop crop model
+  (multi-frame       detection        (Fast/Pro target
+   voting)           (group box/facing)  calibration)
+      └─────────────────┼──────────────────┘
+                        ↓
+              3 structured composition plans
+                        ↓ user picks
+        ┌─── realtime guidance loop (10fps, all local) ───┐
+        │ subject tracking (person / saliency)            │
+        │ deviation → direction text → completion check   │
+        └──────────────────────┬──────────────────────────┘
+                               ↓
+                    ✓ composition achieved → shoot
+```
+
+> A cloud LLM (DeepSeek) **never runs in the realtime loop** — per-frame requests are slow, costly, and unreadable while shooting. It is reserved for "post-shot review" (on the roadmap), pluggable via the `CompositionPlanProviding` / `AIAdviceProvider` protocols — swapping in any vision model only replaces the implementation.
+
+## Project Layout
+
+```text
+FrameHero/
+├── FrameHeroApp.swift                      # App entry
+├── Info.plist
+├── Assets.xcassets/                        # Icon (light/dark/tinted)
+├── Core/
+│   ├── AI/
+│   │   ├── AIConfigurationStore.swift      # AI config hub (+ usage counter)
+│   │   ├── KeychainStore.swift             # Keychain wrapper (API key)
+│   │   ├── APIKeyProvider.swift            # API key reader (Keychain first)
+│   │   ├── DeepSeekService.swift           # DeepSeek API (+ connection test)
+│   │   ├── MockPhotographer.swift          # Offline mock advice
+│   │   ├── AIAdviceProvider.swift          # Advice provider protocol
+│   │   └── PhotographyAdvisor.swift        # Analysis orchestrator
+│   ├── Camera/
+│   │   ├── CameraManager.swift             # Session lifecycle (+Session/Zoom/Photo/
+│   │   │                                   #   VideoOutput/Control/Capability/Models)
+│   │   ├── CameraCapability.swift          # Hardware capability + environment model
+│   │   ├── CameraControlEngine.swift       # Strategy → hardware (differential apply)
+│   │   ├── PhotographyStrategy.swift       # Semantic three-state strategy
+│   │   └── CameraPreviewView.swift         # Preview layer
+│   ├── Composition/
+│   │   ├── CompositionPlan.swift           # Plan model + local plan generator
+│   │   ├── SceneClassifier.swift           # Scene recognition (multi-frame voting)
+│   │   ├── AdaCropPlanAdvisor.swift        # AdaCrop best-crop prediction (Fast/Pro)
+│   │   ├── CompositionEngine.swift         # Scoring + subject extraction (group/continuity)
+│   │   ├── CompositionGuidanceEngine.swift # Deviation → direction/progress/done
+│   │   └── ...(result/target/guidance models)
+│   ├── Detection/
+│   │   ├── CropDetectionStrategy.swift     # Detection mode definitions
+│   │   └── AestheticCropDetector.swift     # Vision faces/bodies/saliency
+│   ├── Models/                             # AdaCrop CoreML models (student/teacher)
+│   ├── Motion/MotionStabilityMonitor.swift # Gyro stability
+│   └── Storage/                            # Photo store (score saved per shot)
+├── Features/
+│   ├── Main/MainTabView.swift              # TabBar + AppRouter
+│   ├── Capture/
+│   │   ├── Views/CaptureView.swift         # Main camera UI
+│   │   ├── ViewModels/CaptureViewModel.swift # AI composition session state machine
+│   │   └── Components/
+│   │       ├── CompositionCoachOverlayView.swift  # Plan cards + guidance overlay
+│   │       ├── CameraPreviewSection.swift  # Preview + overlay container
+│   │       ├── CaptureButton.swift         # Shutter (countdown ring/burst/pulse)
+│   │       └── TopControlBar.swift         # Top bar
+│   ├── Home/
+│   │   ├── Views/HomeView.swift            # Home workbench
+│   │   ├── Views/GalleryView.swift         # Gallery (multi-select delete)
+│   │   ├── Views/PhotoDetailView.swift     # Browser + export (original/card)
+│   │   └── ViewModels/HomeViewModel.swift
+│   ├── Settings/Views/SettingsView.swift   # Settings (incl. AI assistant)
+│   └── ShareCard/ShareCardGenerator.swift  # Info card renderer (watermark-free)
+├── UI/
+│   ├── Design/DesignSystem.swift           # Design tokens
+│   └── Components/                         # Zoom dial / EV / focus / WB sliders
+└── Utilities/Helpers/                      # Haptics / smoothing filters
+```
+
+## Getting Started
 
 ```bash
 git clone https://github.com/xbcmz/FrameHero.git
@@ -60,252 +175,17 @@ cd FrameHero
 open FrameHero.xcodeproj
 ```
 
-### 2. Configure (Optional)
+1. Select your iPhone in Xcode (iOS 17+, real device)
+2. `⌘R` to run
+3. AI composition works **out of the box** — on-device inference, zero configuration
 
-Enable cloud AI advice (DeepSeek) in-app:
+### Optional: Cloud AI (DeepSeek)
 
-1. Run the app, go to **Settings → AI Assistant**
-2. Toggle on **Cloud AI Advice**, paste your DeepSeek API Key and save (stored in the system Keychain, never written to plain files)
-3. Tap **Test Connection** to verify; choose between the V3 chat model and the R1 reasoning model
+1. Go to **Settings → AI Assistant**
+2. Toggle **Cloud AI Advice**, paste your API key and save (stored in Keychain)
+3. Tap **Test Connection** to verify
 
-> No API Key? No problem — the app automatically falls back to the local rule engine + built-in mock advice. Core composition features work fully offline.
-
-### 3. Run
-
-1. Connect your iPhone via USB
-2. Select your device in Xcode (not simulator)
-3. Press `⌘R`
-4. First run requires trusting the developer certificate in **Settings → General → VPN & Device Management**
-
-## Usage Guide
-
-### Basic Controls
-
-| Action | Description |
-|--------|-------------|
-| 🔘 Shutter button | Take a photo (supports auto-capture) |
-| 🪄 Magic Wand button | Toggle AI composition guidance |
-| 🔄 Switch button | Switch front/back camera |
-| 🔍 Zoom ring | Switch lens / slide to zoom |
-
-### Camera Control Panel
-
-Three vertical control panels on the right side, from top to bottom:
-
-1. **Exposure** — drag the slider to adjust exposure compensation
-2. **Focus** — drag the slider for manual focus
-3. **White Balance** — drag the slider to adjust color temperature
-
-Each panel has three buttons at the top to switch AI Auto / Manual / Locked modes.
-
-### AI Advice Card
-
-Enable **AI Advice While Shooting** in **Settings → AI Assistant**, and an advice card appears at the top with:
-
-- **Composition advice** — current composition score and improvement suggestions
-- **AI Camera Parameters** — AI-recommended lens, focus, white balance, and depth settings
-- Displayed as capsule chips for quick reading
-
-### Capture Modes
-
-- **Manual capture** — press the shutter button
-- **Auto capture** — enabled in Settings; automatically triggers when composition is aligned AND device is stable
-
-## Architecture
-
-### Data Flow
-
-```
-Camera Frame (60fps)
-    │
-    ├──→ Composition Engine ──→ Guidance Arrows / Alignment Dots
-    │
-    ├──→ Vision Detection ──→ Scene Analysis (person/face/saliency)
-    │                              │
-    │                              ▼
-    │                    Photography Advisor
-    │                     ├── Local Engine (rule-based)
-    │                     └── Cloud AI (DeepSeek, JSON strategy)
-    │                              │
-    │                              ▼  (merge: cloud overrides local)
-    │                    PhotographyStrategy
-    │                              │
-    │                              ▼  (filter: only .aiAuto params)
-    │                    CameraControlEngine
-    │                              │
-    │                              ▼
-    │                    Hardware Parameters
-    │                    (exposure / focus / WB / lens)
-    │
-    └──→ CapturePipeline (9-stage state machine)
-```
-
-### Directory Structure
-
-```
-FrameHero/
-├── FrameHeroApp.swift                  # App entry
-├── Info.plist                             # Permissions & config
-├── Assets.xcassets/                       # App icon & logo
-├── Core/
-│   ├── AI/                                # AI service layer
-│   │   ├── AIConfigurationStore.swift     # AI config hub (settings data source)
-│   │   ├── KeychainStore.swift            # Keychain wrapper (API key storage)
-│   │   ├── APIKeyProvider.swift           # API key reading (Keychain first)
-│   │   ├── DeepSeekService.swift          # Cloud AI (DeepSeek API)
-│   │   ├── MockPhotographer.swift         # Offline mock AI
-│   │   ├── AIAdviceProvider.swift         # AI advice orchestration
-│   │   └── PhotographyAdvisor.swift       # Strategy generation & merge
-│   ├── Camera/                            # Camera subsystem
-│   │   ├── CameraManager.swift            # Session lifecycle
-│   │   ├── CameraManager+Session.swift    # Permissions, config, switching
-│   │   ├── CameraManager+Models.swift     # Enums: lens, zoom, errors
-│   │   ├── CameraManager+Zoom.swift       # Zoom & lens control
-│   │   ├── CameraManager+Photo.swift      # Photo capture & JPEG encoding
-│   │   ├── CameraManager+VideoOutput.swift # Frame output → detection
-│   │   ├── CameraManager+Control.swift    # Exposure/Focus/WB control APIs
-│   │   ├── CameraManager+Capability.swift # Device capability detection
-│   │   ├── CameraPreviewView.swift        # Camera preview (UIViewRepresentable)
-│   │   ├── CameraCapability.swift         # Hardware capability model
-│   │   ├── CameraControlEngine.swift      # Strategy → hardware translation
-│   │   └── PhotographyStrategy.swift      # Semantic strategy model
-│   ├── Composition/                       # Composition analysis
-│   │   ├── CompositionEngine.swift        # Composition scoring
-│   │   ├── CompositionGuidanceEngine.swift # Guidance arrow generation
-│   │   ├── CompositionResult.swift        # Analysis result model
-│   │   ├── CompositionTarget.swift        # Target position model
-│   │   ├── CurrentComposition.swift       # Current composition state
-│   │   └── GuidanceResult.swift           # Guidance output model
-│   ├── Detection/                         # AI detection engines
-│   │   ├── CropDetectionStrategy.swift    # Strategy protocol
-│   │   ├── CoreMLCropDetector.swift       # CoreML two-stage detector
-│   │   ├── AestheticCropDetector.swift    # Vision-based detector
-│   │   └── BoxCenterManager.swift         # Center tracking & alignment
-│   ├── Motion/
-│   │   └── MotionStabilityMonitor.swift   # Gyroscope/accelerometer
-│   ├── Storage/                           # Photo persistence
-│   │   ├── PhotoRecord.swift              # Data model (Codable)
-│   │   ├── PhotoStorageService.swift      # File storage + JSON index
-│   │   └── ThumbnailGenerator.swift      # Thumbnail generation
-│   └── Models/                           # CoreML model bundles
-│       ├── student/                      # Fast mode (lightweight)
-│       └── teacher/                      # Pro mode (full precision)
-├── Features/
-│   ├── Main/
-│   │   └── MainTabView.swift              # TabBar root (4 tabs)
-│   ├── Capture/                           # Core capture feature
-│   │   ├── Views/CaptureView.swift       # Capture main screen
-│   │   ├── ViewModels/CaptureViewModel.swift  # Pipeline state machine
-│   │   └── Components/
-│   │       ├── AIGuidanceOverlayView.swift    # Guidance arrows overlay
-│   │       ├── CameraPreviewSection.swift     # Preview + overlays
-│   │       ├── CaptureButton.swift            # Shutter button
-│   │       ├── CompositionAdviceCard.swift    # AI advice card
-│   │       ├── DebugPanel.swift               # Debug info
-│   │       ├── TopControlBar.swift            # Top control bar
-│   │       └── UserGuidanceView.swift         # Guidance text
-│   ├── Home/                             # Home workbench + gallery
-│   │   ├── Views/HomeView.swift          # Home (workbench: status/recents/stats)
-│   │   ├── Views/GalleryView.swift       # Photo grid
-│   │   ├── Views/PhotoDetailView.swift   # Full-screen browser
-│   │   ├── ViewModels/HomeViewModel.swift
-│   │   └── Components/PhotoCard.swift
-│   ├── Settings/
-│   │   └── Views/SettingsView.swift      # Settings page (incl. AI assistant)
-│   ├── ShareCard/
-│   │   └── ShareCardGenerator.swift      # Share card (1080×1440, watermark-free)
-├── UI/
-│   ├── Design/DesignSystem.swift         # Design tokens
-│   └── Components/
-│       ├── CircleButton.swift            # Circular button
-│       ├── ContentOverlayView.swift      # Gridlines / tracking point
-│       ├── ExposureControlView.swift     # EV slider + 3-state toggle
-│       ├── FocusControlView.swift        # Focus slider + 3-state toggle
-│       ├── WhiteBalanceControlView.swift # Color temp slider + 3-state
-│       └── ZoomDialView.swift            # Zoom dial (presets + long-press fine dial)
-└── Utilities/
-    └── Helpers/
-        ├── HapticManager.swift           # Haptic feedback
-        └── UniformSmoother.swift         # EWMA smoothing filter
-```
-
-### Navigation
-
-```
-MainTabView (TabView, 4 Tabs + AppRouter)
-├── Tab 1 "Home"      → HomeView                   # AI photography workbench
-├── Tab 2 "Gallery"   → GalleryView                # Photo grid → browser / export
-├── Tab 3 "Capture"   → CaptureView (fullScreen)   # Camera + AI guidance
-└── Tab 4 "Settings"  → SettingsView               # AI assistant / capture prefs
-```
-
-### Camera Control Architecture
-
-The camera control system is built on four core models:
-
-| Model | Responsibility |
-|-------|---------------|
-| `CameraCapability` | Device hardware capabilities (supported lenses, EV range, focus range, WB support) |
-| `CameraEnvironment` | Real-time camera state (ISO, exposure duration, color temperature, ambient light) |
-| `PhotographyStrategy` | Semantic preferences (lens, brightness, motion, focus, white balance, depth) |
-| `CameraControlEngine` | Translates strategy into hardware parameters and executes on `CameraManager` |
-
-**Strategy fields and control modes:**
-
-```swift
-struct PhotographyStrategy {
-    // Each parameter has an independent ControlMode: .aiAuto / .manual / .locked
-    var lensControl: ControlMode
-    var exposureControl: ControlMode
-    var focusControl: ControlMode
-    var whiteBalanceControl: ControlMode
-    var depthPreference: DepthPreference     // .auto / .shallow / .deep
-
-    // Manual overrides (only applied when control == .manual)
-    var manualExposureBias: Float?
-    var manualFocusPosition: Float?
-    var manualWhiteBalanceTemp: Float?
-
-    // AI semantic preferences (applied when control == .aiAuto)
-    var brightnessPreference: BrightnessPreference
-    var motionPreference: MotionPreference
-    var whiteBalancePreference: WhiteBalancePreference
-}
-```
-
-### AI Strategy: Two-Layer Merge
-
-```
-┌─────────────────────────────────────────┐
-│       Cloud AI Strategy (highest priority) │
-│    DeepSeek returns JSON with camera params │
-│    Only fields with values != "auto"       │
-│    override the local engine                │
-└──────────────────┬──────────────────────┘
-                   │ merge
-┌──────────────────▼──────────────────────┐
-│       Local Engine Strategy (fallback)      │
-│    Rule-based, uses composition analysis    │
-│    Works offline                            │
-└──────────────────┬──────────────────────┘
-                   │ filter by ControlMode
-┌──────────────────▼──────────────────────┐
-│       Final PhotographyStrategy             │
-│    Only .aiAuto params are applied          │
-│    .manual and .locked are preserved        │
-└──────────────────────────────────────────┘
-```
-
-AI can control 6 dimensions via JSON:
-
-| Field | Options |
-|-------|---------|
-| `lens` | ultraWide / wide / telephoto / auto |
-| `brightness` | auto / darker / brighter / preserveHighlights / night |
-| `motion` | freezeMotion / balanced / lowNoise |
-| `focus` | auto / subjectLock / manual / macro |
-| `whiteBalance` | auto / warm / cool / natural |
-| `depth` | auto / shallow / deep |
+> No key? AI composition still works fully — realtime guidance is all local; cloud is reserved for upcoming post-shot review.
 
 ## Tech Stack
 
@@ -313,102 +193,53 @@ AI can control 6 dimensions via JSON:
 |-------|-----------|
 | UI | SwiftUI (iOS 17+) |
 | Camera | AVFoundation |
-| AI Inference | CoreML (on-device models) |
-| Visual Analysis | Vision (face, body, saliency) |
-| Cloud AI | DeepSeek API |
-| Motion | CoreMotion (60Hz) |
-| Image Processing | CoreImage / ImageIO |
-| Reactive | Combine |
-| Persistence | FileManager + JSON (Codable) |
+| Scene recognition | Vision (VNClassifyImageRequest, multi-frame voting) |
+| People/saliency | Vision (faces / bodies / attention saliency) |
+| Composition model | CoreML (AdaCrop Student/Teacher, optional tiers) |
+| Cloud AI | DeepSeek API (reserved, any VLM swappable) |
+| Motion | CoreMotion |
+| Persistence | Keychain + FileManager + JSON |
 | Dependencies | None |
-
-## Requirements
-
-- **Device**: iPhone with iOS 17.0+ (iPhone 11+ recommended for telephoto and manual white balance)
-- **Xcode**: 16.0+
-- **Camera**: Rear camera with multiple lenses (for full feature support)
-- **Network**: Optional (cloud AI features require internet; local engine works offline)
-
-### Device Capability Matrix
-
-| Feature | Single-camera | Dual-camera | Triple-camera (Pro) |
-|---------|--------------|-------------|---------------------|
-| Ultra-wide | ❌ | ✅ | ✅ |
-| Telephoto | ❌ | ✅ (2x) | ✅ (3x+) |
-| Manual exposure | ✅ | ✅ | ✅ |
-| Manual focus | ✅ | ✅ | ✅ |
-| Manual white balance | Partial | ✅ | ✅ |
 
 ## FAQ
 
-### Q: Why don't I see the white balance control panel?
-A: Manual color temperature adjustment requires "custom white balance gain lock" support. Front cameras and older devices (iPhone X and earlier) don't support this, so the panel auto-hides. You can still use the "lock white balance" feature.
+### Q: Does AI composition need internet?
+A: No. Scene recognition, person detection, plan generation and realtime guidance all run on-device with zero latency, fully offline. Cloud LLM is only for the roadmap's post-shot review.
 
-### Q: The AI advice card doesn't show parameters?
-A: Check the following:
-1. Make sure Magic Wand is enabled
-2. Make sure the camera is pointed at a scene with a clear subject
-3. If using cloud AI, check network connection and API key
-4. Offline mode: the local engine also generates strategies, but they may be simpler
+### Q: Difference between the three composition-engine tiers?
+A: **Vision** positions targets with pure photography rules; **Fast/Pro** additionally run the AdaCrop CoreML model (Student/Teacher) once to predict the best-composition crop and calibrate plan targets. Realtime guidance is identical across tiers — the difference is where the AI places your target.
 
-### Q: Why doesn't auto-capture trigger?
-A: Auto-capture requires both conditions to be met:
-1. Composition aligned (tracking point enters center alignment zone)
-2. Device stable (gyroscope detects handheld stability)
-3. Auto-capture is enabled in Settings
+### Q: How does it decide "move left / move right"?
+A: The target position comes from the selected plan (rules + model calibration); live deviation is computed by the guidance engine. The locked target is drawn as a dashed marker ring on screen — put the subject inside the ring, no left-right oscillation.
 
-### Q: How do I switch detection engines?
-A: Go to **Settings → Composition Engine**. CoreML engine is more accurate but slightly slower; Vision engine is faster but only detects faces/bodies/saliency regions.
+### Q: Front-camera directions correct?
+A: Yes — both instruction text and the marker position are mirrored to match the preview.
+
+### Q: Why is the white-balance slider missing?
+A: Manual temperature requires "custom white-balance gain lock" support; unsupported devices hide the panel automatically. Locking WB still works.
 
 ### Q: Where are photos stored?
-A: Photos are saved in the app's Application Support directory and are not automatically added to the system photo library. You can manually save to album from the detail view, or generate a share card.
-
-### Q: What languages are supported?
-A: Currently the UI is primarily in Chinese. The architecture supports internationalization — PRs welcome!
+A: Inside the app sandbox (Application Support), not the system library. Export from the photo browser: **original photo** (raw JPEG bytes) or **info card**.
 
 ## Roadmap
 
-- [x] **Phase 0** — Lens capability detection + multi-lens switching
-- [x] **Phase 1** — Exposure control (EV slider + 3-state mechanism)
-- [x] **Phase 2** — Focus control (manual focus + 3-state mechanism)
-- [x] **Phase 3** — White balance control (color temp slider + 3-state)
-- [x] **Phase 4** — Local AI camera strategy engine
-- [x] **Phase 5** — Cloud AI strategy integration (DeepSeek)
-- [ ] **Phase 6** — Low-light detection + night mode
-- [ ] **Phase 7** — HDR / exposure bracketing
-- [x] **Phase 8** — Pro mode control panel UI redesign (collapsible column + zoom dial)
-- [ ] **Phase 9** — Shooting presets (portrait/landscape/food one-tap presets)
+- [x] **Phase 0–5** — lens capability / exposure / focus / WB three-state control + local strategy engine + cloud strategy
+- [x] **Phase 6–8** — pro control panel refactor / zoom dial / AI composition session paradigm
+- [x] **Phase 9** — AI Photographer MVP: scene recognition → composition plans → live guidance
+- [x] **Phase 10** — group awareness / subject continuity / AdaCrop engine tiers
+- [ ] **Post-shot review** — DeepSeek / vision-LLM single-photo & daily batch critique
+- [ ] **VLM plan provider** — scene-aware plans from a vision-language model
+- [ ] **ARKit pose** — finer guidance (level / pitch)
+- [ ] **Auto focal switch** — one-tap execution of plan focal suggestions
 
 ## Contributing
 
-Contributions are welcome! Here's how to get involved:
-
-### Report Issues
-- Use GitHub Issues to submit bugs or feature requests
-- When submitting a bug, please include device model, iOS version, and reproduction steps
-
-### Submit Code
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add some amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
-
-### Code Guidelines
-- Use SwiftUI + MVVM architecture
-- Add a comment at the top of each file explaining its purpose
-- UI components go in `UI/Components/`, feature modules in `Features/`
-- Camera operations must be executed on the `sessionQueue` thread
-- Never hardcode API keys or other sensitive information
+Issues and PRs welcome. Please keep: SwiftUI + MVVM, camera operations on `sessionQueue`, no secrets in code, and a purpose header comment per file.
 
 ## License
 
-MIT License — see [LICENSE](LICENSE) for details.
+MIT License — see [LICENSE](LICENSE).
 
 ## Acknowledgments
 
-Formerly named LiveCapture, now renamed **FrameHero**.
-
-Based on the [LiveCompose](https://github.com/LiveCompose) open-source project. Original composition detection models (AdaCrop student/teacher) and motion tracking system are used with modifications.
-
-Thanks to all contributors and the open source community.
+Formerly named LiveCapture, now **FrameHero**. Based on the [LiveCompose](https://github.com/LiveCompose) open-source project; the original composition detection models (AdaCrop Student/Teacher) and motion-tracking system are used with deep modifications.
