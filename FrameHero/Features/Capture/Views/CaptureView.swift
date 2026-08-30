@@ -67,7 +67,15 @@ struct CaptureView: View {
 					coachSuggestion: viewModel.coachSuggestion,
 					coachGuidance: viewModel.displayGuidance,
 					coachMarkerPoint: viewModel.displayTargetMarkerPoint,
-					coachAligned: viewModel.coachGuidance?.isAligned ?? false
+					coachAligned: viewModel.coachGuidance?.isAligned ?? false,
+					coachPlans: viewModel.compositionPlans,
+					coachSelectedPlanIndex: viewModel.selectedPlanIndex,
+					onSelectPlan: { index in
+						viewModel.selectPlan(at: index)
+					},
+					onCancelPlans: {
+						viewModel.stopAIComposition()
+					}
 				)
 				.frame(width: geo.size.width, height: geo.size.height)
 				.scaleEffect(captureAnimationScale)

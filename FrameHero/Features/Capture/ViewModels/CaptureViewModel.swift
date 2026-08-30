@@ -34,6 +34,7 @@ import CoreMotion
 
 #if os(iOS)
 import SwiftUI
+import Vision
 
 /// 拍摄功能的视图模型
 final class CaptureViewModel: ObservableObject {
@@ -51,6 +52,7 @@ final class CaptureViewModel: ObservableObject {
 	enum CoachPhase: Equatable {
 		case idle        // 会话未激活（纯净相机）
 		case analyzing   // 正在分析场景
+		case plans       // 展示构图方案（等待用户选择）
 		case guiding     // 实时引导中
 		case achieved    // 构图完成
 	}
@@ -62,6 +64,23 @@ final class CaptureViewModel: ObservableObject {
 	@Published private(set) var coachSuggestion: String = ""
 	/// 实时引导结果（供 UI 显示，前置摄像头已做镜像校正）
 	@Published private(set) var coachGuidance: GuidanceResult?
+
+	// MARK: - 构图方案（Composition Plan）
+	/// 分析产出的构图方案（最多 3 个，按推荐度排序）
+	@Published private(set) var compositionPlans: [CompositionPlan] = []
+	/// 当前选中方案的序号
+	@Published private(set) var selectedPlanIndex: Int?
+	/// 方案生成器（MVP：本地启发式；后续可换 VLM 实现）
+	private let planProvider: CompositionPlanProviding = LocalHeuristicPlanProvider()
+	private var selectedPlan: CompositionPlan?
+	/// 方案分析开始时间（积累 ~0.9s 场景/主体证据后出方案）
+	private var planAnalysisStartedAt: Date?
+	private var planGenerationDone = false
+
+	// MARK: - 显著性跟踪（非人物方案）
+	private var saliencyCenter: CGPoint?
+	private var saliencySize: CGSize?
+	private var saliencySmoother = UniformPointSmoother(response: 0.4)
 	/// 自动拍摄倒计时（remain/total 秒）；nil = 不在倒计时
 	@Published private(set) var autoCaptureCountdown: (remain: Double, total: Double)?
 	/// 场景推荐焦段（变焦盘上高亮提示），nil = 无推荐
@@ -263,6 +282,14 @@ final class CaptureViewModel: ObservableObject {
 		currentScene = nil
 		lockedTargetPoint = nil
 		subjectLostSince = nil
+		compositionPlans = []
+		selectedPlan = nil
+		selectedPlanIndex = nil
+		planGenerationDone = false
+		planAnalysisStartedAt = nil
+		saliencyCenter = nil
+		saliencySize = nil
+		saliencySmoother.reset()
 		coachSceneLabel = nil
 		coachGuidance = nil
 		compositionTarget = nil
@@ -284,6 +311,13 @@ final class CaptureViewModel: ObservableObject {
 		isCoachActive = false
 		lockedTargetPoint = nil
 		subjectLostSince = nil
+		compositionPlans = []
+		selectedPlan = nil
+		selectedPlanIndex = nil
+		planGenerationDone = false
+		planAnalysisStartedAt = nil
+		saliencyCenter = nil
+		saliencySize = nil
 		coachPhase = .idle
 		coachGuidance = nil
 		sceneRecommendedFactor = nil
@@ -418,6 +452,13 @@ final class CaptureViewModel: ObservableObject {
 			compositionTarget = nil
 			currentComposition = nil
 			coachGuidance = nil
+			compositionPlans = []
+			selectedPlan = nil
+			selectedPlanIndex = nil
+			planGenerationDone = false
+			planAnalysisStartedAt = nil
+			saliencyCenter = nil
+			saliencySize = nil
 			coachPhase = .analyzing
 			coachSuggestion = "正在分析场景"
 			pendingFrameForAnalysis = true
@@ -546,13 +587,16 @@ final class CaptureViewModel: ObservableObject {
 	}
 
 	private func handleSampleBuffer(_ sample: CMSampleBuffer) {
-		guard isCoachActive, coachPhase != .idle else { return }
+		guard isCoachActive, coachPhase != .idle, coachPhase != .plans else { return }
 		guard let pixel = CMSampleBufferGetImageBuffer(sample) else { return }
 		let orientation = pixelOrientation(for: pixel)
 
-		// 会话启动/镜头切换后的第一帧立即分析
+		// 会话启动/镜头切换/选中方案后的第一帧立即分析
 		if pendingFrameForAnalysis {
 			pendingFrameForAnalysis = false
+			if coachPhase == .analyzing {
+				planAnalysisStartedAt = Date()
+			}
 			analyzeFrameNow(pixel, orientation: orientation)
 			return
 		}
@@ -578,13 +622,22 @@ final class CaptureViewModel: ObservableObject {
 		let zoom = zoomState.currentFactor
 		let focal = zoomState.focalLength
 
-		// 1. 场景识别（独立回调，多帧投票）
-		sceneClassifier.classify(pixel, orientation: orientation) { [weak self] decision in
-			guard let self, let decision else { return }
-			self.applyScene(decision)
+		// 方案分析阶段：场景投票积累证据
+		if coachPhase == .analyzing {
+			sceneClassifier.classify(pixel, orientation: orientation) { [weak self] decision in
+				guard let self, let decision else { return }
+				self.applyScene(decision)
+			}
 		}
 
-		// 2. 主体检测 + 构图评分 + 目标构图（本地 Vision，无网络）
+		// 引导阶段 + 显著性方案：跑显著性跟踪（省掉人物检测）
+		if coachPhase == .guiding || coachPhase == .achieved,
+		   selectedPlan?.tracking == .saliency {
+			runSaliencyTracking(pixel, orientation: orientation)
+			return
+		}
+
+		// 分析阶段 / 人物跟踪方案：Vision 主体检测 + 构图评分
 		photographyAdvisor.analyzeFrame(
 			pixel,
 			orientation: orientation,
@@ -597,6 +650,55 @@ final class CaptureViewModel: ObservableObject {
 				self.ingestAnalysis(result)
 			}
 		}
+	}
+
+	// MARK: - 显著性跟踪（非人物方案的"当前主体"来源）
+
+	private func runSaliencyTracking(_ pixel: CVPixelBuffer, orientation: CGImagePropertyOrientation) {
+		defer { isFrameAnalysisInFlight = false }
+		let request = VNGenerateAttentionBasedSaliencyImageRequest()
+		let handler = VNImageRequestHandler(cvPixelBuffer: pixel, orientation: orientation, options: [:])
+		do {
+			try handler.perform([request])
+		} catch {
+			return
+		}
+		guard let observation = request.results?.first,
+		      let box = observation.salientObjects?.first?.boundingBox else {
+			// 单帧无显著区域：保留上次位置（短暂丢失不闪断）
+			DispatchQueue.main.async { self.ingestSaliencyPlanTick() }
+			return
+		}
+		// Vision 归一化坐标 y 向上，与构图引擎一致
+		let smoothed = saliencySmoother.filter(CGPoint(x: box.midX, y: box.midY))
+		saliencyCenter = smoothed
+		saliencySize = CGSize(width: box.width, height: box.height)
+		DispatchQueue.main.async { self.ingestSaliencyPlanTick() }
+	}
+
+	/// 显著性方案的一次引导更新
+	private func ingestSaliencyPlanTick() {
+		guard let plan = selectedPlan,
+		      coachPhase == .guiding || coachPhase == .achieved else { return }
+		guard let center = saliencyCenter else {
+			coachGuidance = nil
+			return
+		}
+		let size = saliencySize ?? CGSize(width: 0.3, height: 0.3)
+		let current = CurrentComposition(
+			subjectCenterX: center.x,
+			subjectCenterY: center.y,
+			subjectWidthRatio: size.width,
+			subjectHeightRatio: size.height,
+			faceCenterX: nil,
+			faceCenterY: nil,
+			headRoomRatio: 0,
+			minEdgeDistance: 0,
+			isSubjectComplete: true,
+			overallScore: photographyAnalysis?.composition.score ?? 0,
+			subjectPosition: photographyAnalysis?.composition.subjectPosition ?? .unknown
+		)
+		applyGuidance(current: current, target: planTarget(for: plan, currentHeight: size.height))
 	}
 
 	/// 场景结论 → 标签 + 参数预设（带滞回，只在场景变化时下发）
@@ -683,73 +785,184 @@ final class CaptureViewModel: ObservableObject {
 		}
 	}
 
-	/// 消费一次构图分析结果：更新目标、计算引导、迁移会话阶段
+	/// 消费一次构图分析结果（人物跟踪方案 / 方案生成）
 	private func ingestAnalysis(_ result: PhotographyAnalysisResult) {
 		photographyAnalysis = result
 
+		// 方案分析阶段：积累 ~0.9s 证据后出方案
+		if coachPhase == .analyzing {
+			if !planGenerationDone, let started = planAnalysisStartedAt,
+			   Date().timeIntervalSince(started) >= 0.9 {
+				generatePlans()
+			}
+			return
+		}
+
+		guard coachPhase == .guiding || coachPhase == .achieved,
+		      let plan = selectedPlan else { return }
+
+		// 方案跟踪分派
+		switch plan.tracking {
+		case .person:
+			ingestPersonTracking(result, plan: plan)
+		case .saliency:
+			ingestSaliencyPlanTick()
+		case .none:
+			// 静态方案：无实时位置反馈，标记圈 + 方案说明常驻
+			coachGuidance = nil
+			publishSuggestion(plan.detail)
+		}
+	}
+
+	/// 人物跟踪方案的一次引导更新
+	private func ingestPersonTracking(_ result: PhotographyAnalysisResult, plan: CompositionPlan) {
 		let person = result.composition.person
-		var effectiveTarget = result.target
-
-		if person.detected {
-			// 主体在场：首次稳定出现时锁定目标，会话内不再漂移
-			subjectLostSince = nil
-			if lockedTargetPoint == nil {
-				lockedTargetPoint = CGPoint(
-					x: lockedTargetX(for: person),
-					y: effectiveTarget.targetCenterY
-				)
-				guidanceEngine.reset()
-			}
-			effectiveTarget.targetCenterX = lockedTargetPoint!.x
-			effectiveTarget.targetCenterY = lockedTargetPoint!.y
-			compositionTarget = effectiveTarget
-			currentComposition = makeCurrentComposition(from: result.composition)
-
-			// 有主体才计算位置引导
-			if compositionRectInView.width > 0 {
-				coachGuidance = guidanceEngine.compute(
-					current: currentComposition!,
-					target: effectiveTarget,
-					viewSize: compositionRectInView.size
-				)
-			}
-		} else {
-			// 无主体：不产出位置引导（避免对空目标乱指），chip 走场景静态建议
-			compositionTarget = nil
-			currentComposition = nil
+		guard person.detected else {
 			coachGuidance = nil
 			if subjectLostSince == nil { subjectLostSince = Date() }
-			if let lost = subjectLostSince,
-			   Date().timeIntervalSince(lost) > 1.5 {
-				lockedTargetPoint = nil
-			}
-		}
-
-		// 阶段迁移
-		switch coachPhase {
-		case .analyzing:
-			// 第一份分析到达即进入引导（首条文案免防抖直达）
-			coachSuggestion = chipText(for: result, guidance: coachGuidance)
-			lastSuggestionChange = Date()
-			coachPhase = .guiding
-
-		case .guiding, .achieved:
-			publishSuggestion(chipText(for: result, guidance: coachGuidance))
-
-			if coachGuidance?.state == .optimal {
-				if coachPhase != .achieved {
-					coachPhase = .achieved
-					HapticManager.shared.focusLock()
-					scheduleAutoCaptureIfEnabled()
-				}
-			} else if coachPhase == .achieved {
-				coachPhase = .guiding
+			if let lost = subjectLostSince, Date().timeIntervalSince(lost) > 1.5 {
 				cancelAutoCapture()
+				if coachPhase == .achieved { coachPhase = .guiding }
+				publishSuggestion("人物不在画面里了，重新取景")
 			}
+			return
+		}
+		subjectLostSince = nil
+		applyGuidance(
+			current: makeCurrentComposition(from: result.composition),
+			target: planTarget(for: plan, currentHeight: person.heightRatio)
+		)
+	}
 
-		case .idle:
+	/// 方案目标：位置来自方案，尺寸目标由距离建议决定
+	private func planTarget(for plan: CompositionPlan, currentHeight: CGFloat) -> CompositionTarget {
+		var target = CompositionTarget(
+			targetCenterX: lockedTargetPoint?.x ?? plan.subjectTarget.x,
+			// 方案 y 从顶部计，引擎 y 向上：1 - y
+			targetCenterY: 1 - plan.subjectTarget.y,
+			targetWidthRatio: 0.4,
+			targetHeightRatio: planHeightTarget(plan, currentHeight: currentHeight),
+			targetHeadRoom: 0.12,
+			preferredLens: .keepCurrent,
+			compositionStyle: .ruleOfThirds,
+			targetScore: 85,
+			adviceTitle: plan.title,
+			adviceText: plan.detail,
+			suggestedStyle: plan.styleWord
+		)
+		switch plan.composition {
+		case .centerSymmetry:
+			target.compositionStyle = .center
+		default:
 			break
 		}
+		return target
+	}
+
+	/// 距离建议 → 目标主体高度
+	private func planHeightTarget(_ plan: CompositionPlan, currentHeight: CGFloat) -> CGFloat {
+		switch plan.distance {
+		case .closer: return max(currentHeight, 0.68)
+		case .farther: return min(currentHeight, 0.3)
+		case .keep: return currentHeight
+		}
+	}
+
+	/// 统一的引导应用：计算 GuidanceResult + 达标阶段迁移
+	private func applyGuidance(current: CurrentComposition, target: CompositionTarget) {
+		currentComposition = current
+		compositionTarget = target
+		guard compositionRectInView.width > 0 else {
+			coachGuidance = nil
+			return
+		}
+		let guidance = guidanceEngine.compute(
+			current: current,
+			target: target,
+			viewSize: compositionRectInView.size
+		)
+		coachGuidance = guidance
+
+		if guidance.state == .optimal {
+			if coachPhase != .achieved {
+				coachPhase = .achieved
+				HapticManager.shared.focusLock()
+				scheduleAutoCaptureIfEnabled()
+			}
+		} else if coachPhase == .achieved {
+			coachPhase = .guiding
+			cancelAutoCapture()
+		}
+		publishSuggestion(chipText(guidance: guidance, plan: selectedPlan))
+	}
+
+	// MARK: - 方案生成与选择
+
+	/// 分析证据就绪 → 生成构图方案
+	private func generatePlans() {
+		planGenerationDone = true
+		let scene = currentScene ?? .generic
+		let person = photographyAnalysis?.composition.person
+		var plans = planProvider.generatePlans(
+			scene: scene,
+			person: person,
+			zoomFactor: zoomState.currentFactor,
+			hasTelephoto: zoomPresets.contains { $0.lens == .telephoto },
+			hasUltraWide: zoomPresets.contains { $0.lens == .ultraWide }
+		)
+		if plans.isEmpty {
+			// 兜底：至少给一个通用方案
+			plans = planProvider.generatePlans(
+				scene: .generic, person: nil,
+				zoomFactor: zoomState.currentFactor,
+				hasTelephoto: false, hasUltraWide: false
+			)
+		}
+		coachGuidance = nil
+		compositionPlans = plans
+		coachPhase = .plans
+		HapticManager.shared.soft()
+	}
+
+	/// 用户选择方案 → 进入引导（目标锁定自方案）
+	func selectPlan(at index: Int) {
+		guard compositionPlans.indices.contains(index) else { return }
+		let plan = compositionPlans[index]
+		selectedPlan = plan
+		selectedPlanIndex = index
+
+		lockedTargetPoint = CGPoint(x: plan.subjectTarget.x, y: 1 - plan.subjectTarget.y)
+		subjectLostSince = nil
+		guidanceEngine.reset()
+		saliencySmoother.reset()
+		saliencyCenter = nil
+
+		// 焦段建议 → 变焦盘高亮（P1 的自动切换先不做，只提示）
+		if let hint = plan.focalHint, let factor = Self.parseFocalHint(hint) {
+			sceneRecommendedFactor = factor
+		} else {
+			sceneRecommendedFactor = nil
+		}
+
+		coachSceneLabel = plan.title
+		coachSuggestion = plan.detail
+		lastSuggestionChange = Date()
+		pendingSuggestion = nil
+		suggestionDebounceWork?.cancel()
+		coachGuidance = nil
+		coachPhase = .guiding
+		HapticManager.shared.selection()
+		pendingFrameForAnalysis = true
+	}
+
+	/// "2x"/"0.5x" → 变焦倍率
+	private static func parseFocalHint(_ hint: String) -> CGFloat? {
+		let trimmed = hint
+			.replacingOccurrences(of: "x", with: "")
+			.replacingOccurrences(of: "X", with: "")
+			.trimmingCharacters(in: .whitespaces)
+		guard let value = Double(trimmed), value > 0 else { return nil }
+		return CGFloat(value)
 	}
 
 	/// chip 文案发布（防抖）：相同文案不发布；
@@ -807,25 +1020,36 @@ final class CaptureViewModel: ObservableObject {
 
 	/// 供 UI 显示的目标标记点（视图坐标；前置预览是镜像的，X 需翻转）
 	var displayTargetMarkerPoint: CGPoint? {
-		guard let point = coachGuidance?.targetPointInView else { return nil }
-		guard isFrontCamera else { return point }
-		return CGPoint(x: compositionRectInView.width - point.x, y: point.y)
+		if let point = coachGuidance?.targetPointInView {
+			return isFrontCamera
+				? CGPoint(x: compositionRectInView.width - point.x, y: point.y)
+				: point
+		}
+		// 静态方案（无跟踪）：方案目标点直接上屏
+		if let plan = selectedPlan, plan.tracking == .none, compositionRectInView.width > 0 {
+			let x = plan.subjectTarget.x * compositionRectInView.width
+			let y = plan.subjectTarget.y * compositionRectInView.height
+			return isFrontCamera
+				? CGPoint(x: compositionRectInView.width - x, y: y)
+				: CGPoint(x: x, y: y)
+		}
+		return nil
 	}
 
-	/// 一行建议指令（chip 文案）：有主体按引导方向说，没主体按场景说
-	private func chipText(for result: PhotographyAnalysisResult, guidance: GuidanceResult?) -> String {
+	/// 一行建议指令（chip 文案）：有引导按方向说，无引导按方案/场景说
+	private func chipText(guidance: GuidanceResult?, plan: CompositionPlan?) -> String {
 		if let guidance {
 			switch guidance.state {
 			case .optimal:
 				return isAutoCaptureEnabled ? "构图完成，即将拍摄" : "构图完成，可以拍了"
 			case .nearlyOptimal:
-				return "把人物对准标记圈，就差一点"
+				return "把主体对准标记圈，就差一点"
 			case .adjusting:
 				return directionText(for: guidance)
 			}
 		}
-		if result.composition.person.detected {
-			return "把人物调整到三分线交叉点附近"
+		if let plan {
+			return plan.detail
 		}
 		return currentScene?.defaultInstruction ?? SceneClassifier.SceneKind.generic.defaultInstruction
 	}

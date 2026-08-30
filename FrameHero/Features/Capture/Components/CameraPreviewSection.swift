@@ -40,6 +40,11 @@ struct CameraPreviewSection: View {
 	let coachGuidance: GuidanceResult?
 	let coachMarkerPoint: CGPoint?
 	let coachAligned: Bool
+	// 构图方案（.plans 阶段）
+	let coachPlans: [CompositionPlan]
+	let coachSelectedPlanIndex: Int?
+	let onSelectPlan: (Int) -> Void
+	let onCancelPlans: () -> Void
 
 	var body: some View {
 		GeometryReader { previewGeo in
@@ -67,7 +72,11 @@ struct CameraPreviewSection: View {
 					guidance: coachGuidance,
 					markerPoint: coachMarkerPoint,
 					isAligned: coachAligned,
-					compositionRect: composition
+					compositionRect: composition,
+					plans: coachPlans,
+					selectedPlanIndex: coachSelectedPlanIndex,
+					onSelectPlan: onSelectPlan,
+					onCancelPlans: onCancelPlans
 				)
 				.frame(width: composition.width, height: composition.height)
 				.position(x: composition.midX, y: composition.midY)

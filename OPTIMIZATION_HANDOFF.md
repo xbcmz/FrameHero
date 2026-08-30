@@ -39,6 +39,22 @@
 
 真机验收链路：开自动拍摄 → 达标看倒计时/听震动 → 故意晃手看取消 → 稳住重新达标 → 长按快门连拍；前置模式下确认指令方向语义。
 
+## 第九批（dev 分支，2026-08-29：AI 摄影师 MVP——构图方案）
+
+> 依据用户提供的《AI 构图拍照 MVP 开发方案》实施 P0：一次分析 → 结构化构图方案（1~3 个）→ 用户选择 → 实时引导 → 完成判断 → 拍摄。
+
+- **新增 `CompositionPlan.swift`**：
+  - 模型：CompositionPlan（title/styleWord/detail/composition/subjectTarget/distance/focalHint/tracking/confidence），PlanCompositionStyle 七类（三分/居中对称/引导线/框架/前景层次/留白/人物环境），PlanDistance，PlanTracking（person/saliency/none）
+  - 坐标约定：方案 y 从顶部计（0=顶），选中时转 1-y 给引擎
+  - **`CompositionPlanProviding` 协议 = AI 扩展点**：MVP 默认 `LocalHeuristicPlanProvider`（本地启发式：场景+主体快照→方案，零网络离线可用）；接 VLM 时实现同协议即可（AI 仅在点「AI 构图」时调用一次，实时跟踪仍全本地）
+- **CoachPhase 新增 `.plans`**：会话流程 idle → analyzing（积累 0.9s 场景/主体证据）→ **plans（方案卡片）** → guiding → achieved
+- **方案卡片 UI**（CompositionCoachOverlayView，.plans 阶段可点击）："AI 摄影师·发现 N 种拍法" + 卡片（标题/风格词/说明/推荐标记）+ 取消；选中 → selection 震动 → 进入引导
+- **方案驱动的目标系统**：目标位置/距离目标来自所选方案；距离建议映射目标主体高度（closer≥0.68 / farther≤0.3 / keep=当前）；chip 标签用方案标题
+- **显著性跟踪**：非人物方案用 VNGenerateAttentionBasedSaliencyImageRequest 跟踪"当前主体"（EWMA 平滑防抖），人物方案仍走 Vision 人脸/人体；none 方案（正对文档）静态标记圈无位置反馈
+- 焦段建议：方案 focalHint（"2x"/"0.5x"）→ 变焦盘黄色高亮提示（P1 的自动切换暂不做）
+- 人物离开画面 >1.5s：取消自动拍摄 + 提示重新取景
+- 真机待验证：方案卡片出现节奏（~1s）、显著性跟踪稳定性、无人物场景方案实用性
+
 ## 版本基线与分支约定
 
 ## 项目位置与验证命令

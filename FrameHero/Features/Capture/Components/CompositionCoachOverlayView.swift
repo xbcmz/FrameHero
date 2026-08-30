@@ -33,12 +33,24 @@ struct CompositionCoachOverlayView: View {
     /// 3:4 构图区域（线与 chip 都画在这个区域内）
     let compositionRect: CGRect
 
+    // MARK: - 构图方案（.plans 阶段）
+    let plans: [CompositionPlan]
+    let selectedPlanIndex: Int?
+    let onSelectPlan: (Int) -> Void
+    let onCancelPlans: () -> Void
+
     @State private var pulse = false
     @State private var scanProgress: CGFloat = 0
 
     var body: some View {
         ZStack {
             if phase == .idle { Color.clear }
+
+            // 方案选择：AI 摄影师给出最多 3 种拍法
+            if phase == .plans {
+                plansPanel
+            }
+
             if phase == .guiding || phase == .achieved {
                 thirdsGrid
                     .opacity(phase == .achieved ? 0.35 : 1.0)
@@ -46,7 +58,7 @@ struct CompositionCoachOverlayView: View {
             }
 
             // 目标标记圈：AI 选定的构图位置，把主体放进去即变绿（最终指示）
-            if let markerPoint {
+            if phase == .guiding || phase == .achieved, let markerPoint {
                 targetMarker
                     .position(markerPoint)
             }
@@ -61,7 +73,7 @@ struct CompositionCoachOverlayView: View {
                         .frame(height: 44)
                         .padding(.top, 10)
 
-                    if phase != .analyzing, hasChipContent {
+                    if phase == .guiding || phase == .achieved, hasChipContent {
                         suggestionChip
                     }
                 }
@@ -71,16 +83,16 @@ struct CompositionCoachOverlayView: View {
         }
         .animation(.easeInOut(duration: 0.25), value: phase)
         .animation(.easeInOut(duration: 0.25), value: suggestion)
-        .allowsHitTesting(false)
+        .allowsHitTesting(phase == .plans)
     }
 
     /// 是否有可见内容（都没有时整体不渲染，避免空框/占位）
     private var hasVisibleContent: Bool {
-        guard phase != .idle else { return false }
-        if phase == .analyzing { return true }
-        if phase == .achieved { return true }
-        // guiding：有图标或有 chip 文案才渲染
-        return guidance != nil || hasChipContent
+        switch phase {
+        case .idle: return false
+        case .analyzing, .plans, .achieved: return true
+        case .guiding: return guidance != nil || hasChipContent || markerPoint != nil
+        }
     }
 
     /// chip 是否有内容（空文案 + 无场景标签时不渲染，避免空心胶囊）
@@ -105,6 +117,92 @@ struct CompositionCoachOverlayView: View {
             context.stroke(path, with: .color(.white.opacity(alpha)), lineWidth: 1)
         }
         .allowsHitTesting(false)
+    }
+
+    // MARK: - 方案面板（.plans 阶段）
+
+    private var plansPanel: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 8) {
+                Image(systemName: "sparkles")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundColor(.yellow)
+                Text("AI 摄影师 · 发现 \(plans.count) 种拍法")
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundColor(.white)
+                Spacer()
+                Button {
+                    HapticManager.shared.light()
+                    onCancelPlans()
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 22))
+                        .foregroundColor(.white.opacity(0.65))
+                }
+            }
+            .padding(.horizontal, 4)
+
+            ForEach(Array(plans.enumerated()), id: \.element.id) { index, plan in
+                Button {
+                    HapticManager.shared.selection()
+                    onSelectPlan(index)
+                } label: {
+                    PlanCard(plan: plan, recommended: index == 0)
+                }
+                .buttonStyle(.plain)
+            }
+
+            Spacer()
+        }
+        .padding(.top, 6)
+        .transition(.move(edge: .top).combined(with: .opacity))
+    }
+
+    /// 方案卡片：标题 + 风格词 + 一句说明
+    private struct PlanCard: View {
+        let plan: CompositionPlan
+        let recommended: Bool
+
+        var body: some View {
+            HStack(spacing: 10) {
+                VStack(alignment: .leading, spacing: 3) {
+                    HStack(spacing: 6) {
+                        Text(plan.title)
+                            .font(.system(size: 15, weight: .semibold))
+                            .foregroundColor(.white)
+                        Text(plan.styleWord)
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundColor(.yellow)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(Capsule().fill(Color.yellow.opacity(0.16)))
+                        if recommended {
+                            Text("推荐")
+                                .font(.system(size: 10, weight: .bold))
+                                .foregroundColor(.green)
+                        }
+                    }
+                    Text(plan.detail)
+                        .font(.system(size: 12))
+                        .foregroundColor(.white.opacity(0.72))
+                        .lineLimit(1)
+                }
+                Spacer()
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundColor(.white.opacity(0.5))
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 12)
+            .background(
+                RoundedRectangle(cornerRadius: 14)
+                    .fill(Color.black.opacity(0.62))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 14)
+                    .stroke(recommended ? Color.green.opacity(0.7) : Color.white.opacity(0.12), lineWidth: 1)
+            )
+        }
     }
 
     // MARK: - 目标标记圈
@@ -160,6 +258,8 @@ struct CompositionCoachOverlayView: View {
                 .font(.system(size: 30, weight: .semibold))
                 .foregroundColor(.green)
                 .shadow(color: .black.opacity(0.45), radius: 3, x: 0, y: 1)
+        case .plans:
+            EmptyView()
         case .idle:
             EmptyView()
         }
@@ -197,7 +297,7 @@ struct CompositionCoachOverlayView: View {
 
     private var chipAccent: Color {
         switch phase {
-        case .analyzing, .idle: return .white
+        case .analyzing, .idle, .plans: return .white
         case .achieved: return .green
         case .guiding:
             if let guidance {
