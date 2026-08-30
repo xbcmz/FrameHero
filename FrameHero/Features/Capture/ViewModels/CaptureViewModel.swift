@@ -76,6 +76,11 @@ final class CaptureViewModel: ObservableObject {
 	private var cloudPlanInFlight = false
 	private var cloudFrameData: Data?
 	private var cloudAttempt = 0
+	/// 本次会话生效的构图分析模式（开始时从设置快照，会话过程中不随设置页切换而变）
+	private var activeAnalysisMode: AIConfigurationStore.CompositionAnalysisMode = .auto
+	/// AI 构图会话代数：每次 start/stop 递增，用于丢弃跨会话的过期异步回调
+	/// （比如云端方案请求还没返回，用户就已经停止或重新开始了新一轮分析）
+	private var aiSessionGeneration = 0
 	/// 本会话的场景描述（来自 DeepSeek Vision，方案卡片页展示备用）
 	/// AdaCrop 参谋：方案生成时一次性预测最佳构图区（Vision 档位不启用）
 	private lazy var adaCropPlanAdvisor: AdaCropPlanAdvisor? = {
@@ -303,6 +308,7 @@ final class CaptureViewModel: ObservableObject {
 
 	func startAIComposition() {
 		HapticManager.shared.light()
+		aiSessionGeneration += 1
 		sceneClassifier.reset()
 		currentScene = nil
 		lockedTargetPoint = nil
@@ -331,22 +337,33 @@ final class CaptureViewModel: ObservableObject {
 		coachPhase = .analyzing
 		isCoachActive = true
 		sceneRecommendedFactor = nil
+		activeAnalysisMode = AIConfigurationStore.shared.compositionAnalysisMode
 
-		// MVP Final Plan：DeepSeek Vision 负责思考（一次请求），失败回退本地启发式
-		if AIConfigurationStore.shared.isCloudConfigured {
-			cloudPlanInFlight = true
-			cloudAttempt = 0
-			captureFrameForVision { [weak self] data in
-				guard let self else { return }
-				guard let data else {
-					self.startLocalPlanFallback()
-					return
-				}
-				self.cloudFrameData = data
-				self.requestCloudPlans(attempt: 1)
-			}
-		} else {
+		// MVP Final Plan：DeepSeek Vision 负责思考，失败回退本地启发式。
+		// auto 模式下本地管线（场景分类 + 人物检测 + AdaCrop）与云端请求并行启动，
+		// 本地管线依旧走下面统一的 pendingFrameForAnalysis/coachPhase 触发；
+		// 谁先出方案谁先展示，云端来迟了只在用户还没选定方案时无感升级
+		// （见 analyzeFrameNow 的门槛判断与 deliverCloudPlans 的兜底逻辑）。
+		switch activeAnalysisMode {
+		case .localOnly:
+			// 仅本地：即使配置了云端 Key 也不发起网络请求，用于对比测试本地路径体验
 			startLocalPlanFallback()
+		case .auto, .cloudOnly:
+			if AIConfigurationStore.shared.isCloudConfigured {
+				cloudPlanInFlight = true
+				cloudAttempt = 0
+				captureFrameForVision { [weak self] data in
+					guard let self else { return }
+					guard let data else {
+						self.startLocalPlanFallback()
+						return
+					}
+					self.cloudFrameData = data
+					self.requestCloudPlans(attempt: 1)
+				}
+			} else {
+				startLocalPlanFallback()
+			}
 		}
 		// 标记待分析帧：下一帧到达立即分析，不等节流窗口
 		pendingFrameForAnalysis = true
@@ -354,6 +371,7 @@ final class CaptureViewModel: ObservableObject {
 
 	func stopAIComposition() {
 		HapticManager.shared.light()
+		aiSessionGeneration += 1
 		isCoachActive = false
 		lockedTargetPoint = nil
 		subjectLostSince = nil
@@ -714,7 +732,9 @@ final class CaptureViewModel: ObservableObject {
 			}
 
 			let elapsed = planAnalysisStartedAt.map { Date().timeIntervalSince($0) } ?? 0
-			if !planGenerationDone, !cloudPlanInFlight,
+			// cloudOnly 模式下保持旧行为：云端还在飞就不让本地出方案；
+			// auto/localOnly 下本地不等云端，证据就绪即出方案（本地优先 + 云端增强）
+			if !planGenerationDone, (activeAnalysisMode != .cloudOnly || !cloudPlanInFlight),
 			   photographyAnalysis != nil, elapsed >= 0.9, !adaCropRunning {
 				if let ada = adaCropPlanAdvisor {
 					adaCropRunning = true
@@ -1050,6 +1070,9 @@ final class CaptureViewModel: ObservableObject {
 	/// 发送帧到 DeepSeek Vision 生成构图方案；JSON 无效重试一次，
 	/// 仍失败回退本地启发式方案（相机永不因云端失败而不可用）
 	private func requestCloudPlans(attempt: Int) {
+		// 记录发起时的会话代数：回调返回时若会话已经重新开始（代数变了），说明这是
+		// 上一轮已停止/已重新开始会话的过期响应，直接丢弃避免串扰新会话
+		let generation = aiSessionGeneration
 		guard let (service, _) = VisionAIServiceFactory.make(), let frame = cloudFrameData else {
 			startLocalPlanFallback()
 			return
@@ -1058,7 +1081,7 @@ final class CaptureViewModel: ObservableObject {
 		service.sendVisionRequest(jpegData: frame,
 								  prompt: CompositionPrompt.planRequest,
 								  systemPrompt: CompositionPrompt.systemRole) { [weak self] result in
-			guard let self else { return }
+			guard let self, self.aiSessionGeneration == generation else { return }
 			switch result {
 			case .success(let text):
 				guard let response = CompositionPlanResponse.parse(from: text),
@@ -1094,15 +1117,26 @@ final class CaptureViewModel: ObservableObject {
 			return
 		}
 		cloudPlanInFlight = false
+		guard coachPhase == .analyzing || (coachPhase == .plans && selectedPlan == nil) else { return }
+		let isUpgradeFromLocal = coachPhase == .plans
 		compositionPlans = plans
 		coachSceneLabel = response.scene?.type
 		coachGuidance = nil
 		coachPhase = .plans
 		HapticManager.shared.soft()
+		if isUpgradeFromLocal {
+			coachSuggestion = "云端方案已就绪，已为你更新更懂场景的构图建议"
+			lastSuggestionChange = Date()
+		}
 	}
 
 	/// 本地启发式兜底：走原有的证据积累 → 规则方案流程
 	private func startLocalPlanFallback(note: String? = nil) {
+		guard coachPhase == .analyzing else {
+			cloudPlanInFlight = false
+			cloudFrameData = nil
+			return
+		}
 		cloudPlanInFlight = false
 		cloudFrameData = nil
 		if let note {
@@ -1121,6 +1155,10 @@ final class CaptureViewModel: ObservableObject {
 
 	/// 分析证据就绪 → 生成构图方案
 	private func generatePlans() {
+		// auto 模式下本地 AdaCrop 预测是异步的：它开始时 coachPhase 还是 .analyzing，
+		// 但完成回调返回时云端可能已经先一步送达并把 coachPhase 推进到 .plans。
+		// 这里再检一次避免把已展示的云端方案覆盖回本地方案。
+		guard coachPhase == .analyzing else { return }
 		planGenerationDone = true
 		let scene = currentScene ?? .generic
 		let person = photographyAnalysis?.composition.person

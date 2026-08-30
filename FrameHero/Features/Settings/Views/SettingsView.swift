@@ -193,6 +193,11 @@ struct SettingsView: View {
                 Divider()
                     .background(DesignSystem.Colors.backgroundSecondary)
 
+                analysisModeRow
+
+                Divider()
+                    .background(DesignSystem.Colors.backgroundSecondary)
+
                 ToggleRow(
                     icon: "lightbulb",
                     title: "AI 构图助手",
@@ -287,6 +292,24 @@ struct SettingsView: View {
         .padding(.horizontal, DesignSystem.Spacing.medium)
         .disabled(!aiConfig.cloudAIEnabled)
         .opacity(aiConfig.cloudAIEnabled ? 1.0 : 0.4)
+    }
+
+    // MARK: 构图分析模式行
+
+    /// 本地/云端对比测试开关：控制「AI 构图」点击后走本地、云端还是两者并行
+    private var analysisModeRow: some View {
+        modelSubRow(
+            icon: "bolt.badge.clock",
+            title: "构图分析模式",
+            description: aiConfig.compositionAnalysisMode.description
+        ) {
+            Picker("构图分析模式", selection: $aiConfig.compositionAnalysisMode) {
+                ForEach(AIConfigurationStore.CompositionAnalysisMode.allCases) { mode in
+                    Text(mode.shortName).tag(mode)
+                }
+            }
+            .pickerStyle(.menu)
+        }
     }
 
     /// 单个模型子行：图标+标题 → 右对齐选择器 → 说明文字
