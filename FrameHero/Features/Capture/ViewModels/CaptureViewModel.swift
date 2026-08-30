@@ -97,6 +97,10 @@ final class CaptureViewModel: ObservableObject {
 	private var saliencyCenter: CGPoint?
 	private var saliencySize: CGSize?
 	private var saliencySmoother = UniformPointSmoother(response: 0.4)
+	/// 显著区域从何时开始丢失（冻结旧位置超过 0.7s 即停止方向指挥）
+	private var saliencyLostSince: Date?
+	private var lastRawSaliencyCenter: CGPoint?
+	private var saliencyRejectCount = 0
 	/// 自动拍摄倒计时（remain/total 秒）；nil = 不在倒计时
 	@Published private(set) var autoCaptureCountdown: (remain: Double, total: Double)?
 	/// 场景推荐焦段（变焦盘上高亮提示），nil = 无推荐
@@ -312,6 +316,9 @@ final class CaptureViewModel: ObservableObject {
 		saliencySize = nil
 		saliencySmoother.reset()
 		sessionCropHint = nil
+		saliencyLostSince = nil
+		lastRawSaliencyCenter = nil
+		saliencyRejectCount = 0
 		coachSceneLabel = nil
 		coachGuidance = nil
 		compositionTarget = nil
@@ -357,6 +364,8 @@ final class CaptureViewModel: ObservableObject {
 		planAnalysisStartedAt = nil
 		saliencyCenter = nil
 		saliencySize = nil
+		saliencyLostSince = nil
+		lastRawSaliencyCenter = nil
 		coachPhase = .idle
 		coachGuidance = nil
 		sceneRecommendedFactor = nil
@@ -498,6 +507,8 @@ final class CaptureViewModel: ObservableObject {
 			planAnalysisStartedAt = nil
 			saliencyCenter = nil
 			saliencySize = nil
+			saliencyLostSince = nil
+			lastRawSaliencyCenter = nil
 			coachPhase = .analyzing
 			sessionCropHint = nil
 			coachSuggestion = "正在分析场景"
@@ -755,12 +766,28 @@ final class CaptureViewModel: ObservableObject {
 		}
 		guard let observation = request.results?.first,
 		      let box = observation.salientObjects?.first?.boundingBox else {
-			// 单帧无显著区域：保留上次位置（短暂丢失不闪断）
+			// 无显著区域：记录丢失时刻（短暂丢失保留上次位置防闪断）
+			if saliencyLostSince == nil { saliencyLostSince = Date() }
 			DispatchQueue.main.async { self.ingestSaliencyPlanTick() }
 			return
 		}
-		// Vision 归一化坐标 y 向上，与构图引擎一致
-		let smoothed = saliencySmoother.filter(CGPoint(x: box.midX, y: box.midY))
+
+		let raw = CGPoint(x: box.midX, y: box.midY)
+		// 跳变拒绝：单帧位移超过 0.35 视为背景抢焦点的误检，本帧忽略；
+		// 连续 3 帧跳变则接受新位置（快速甩动相机的正常重新捕获）
+		if let last = lastRawSaliencyCenter,
+		   hypot(raw.x - last.x, raw.y - last.y) > 0.35,
+		   saliencyRejectCount < 3 {
+			saliencyRejectCount += 1
+			DispatchQueue.main.async { self.ingestSaliencyPlanTick() }
+			return
+		}
+		saliencyRejectCount = 0
+		lastRawSaliencyCenter = raw
+		saliencyLostSince = nil
+
+		// Vision 归一化坐标 y 向上，与构图引擎一致；EWMA 平滑防抖
+		let smoothed = saliencySmoother.filter(raw)
 		saliencyCenter = smoothed
 		saliencySize = CGSize(width: box.width, height: box.height)
 		DispatchQueue.main.async { self.ingestSaliencyPlanTick() }
@@ -770,10 +797,16 @@ final class CaptureViewModel: ObservableObject {
 	private func ingestSaliencyPlanTick() {
 		guard let plan = selectedPlan,
 		      coachPhase == .guiding || coachPhase == .achieved else { return }
-		guard let center = saliencyCenter else {
+		// 主体丢失超过 0.7s：冻结的旧位置会一直指挥移动（用户报告的
+		// "主体丢了还一直让我左移"就是它），此时停止方向指挥，
+		// 保留标记圈作为"转回来"的参照
+		if saliencyCenter == nil ||
+			(saliencyLostSince.map { Date().timeIntervalSince($0) > 0.7 } ?? false) {
 			coachGuidance = nil
+			publishSuggestion("主体出画面了，转回标记圈的位置")
 			return
 		}
+		guard let center = saliencyCenter else { return }
 		// 首次显著性定位时：用 AdaCrop 裁切区校准目标（模型认为的最佳落点）
 		if lockedTargetPoint == nil {
 			var target = CGPoint(x: plan.subjectTarget.x, y: 1 - plan.subjectTarget.y)
@@ -936,10 +969,10 @@ final class CaptureViewModel: ObservableObject {
 		guard person.detected else {
 			coachGuidance = nil
 			if subjectLostSince == nil { subjectLostSince = Date() }
-			if let lost = subjectLostSince, Date().timeIntervalSince(lost) > 1.5 {
+			if let lost = subjectLostSince, Date().timeIntervalSince(lost) > 0.6 {
 				cancelAutoCapture()
 				if coachPhase == .achieved { coachPhase = .guiding }
-				publishSuggestion("人物不在画面里了，重新取景")
+				publishSuggestion("人物出画面了，转回标记圈")
 			}
 			return
 		}
@@ -1119,7 +1152,16 @@ final class CaptureViewModel: ObservableObject {
 	/// 用户选择方案 → 进入引导（目标锁定自方案）
 	func selectPlan(at index: Int) {
 		guard compositionPlans.indices.contains(index) else { return }
-		let plan = compositionPlans[index]
+		var plan = compositionPlans[index]
+
+		// 云方案按 main_subject 推断跟踪方式；若推断为人物但当前画面
+		// 没有检测到人物（拍物品很常见），降级为显著性跟踪
+		if plan.tracking == .person,
+		   photographyAnalysis?.composition.person.detected != true {
+			plan.tracking = .saliency
+			saliencyLostSince = nil
+			lastRawSaliencyCenter = nil
+		}
 		selectedPlan = plan
 		selectedPlanIndex = index
 
@@ -1259,6 +1301,15 @@ final class CaptureViewModel: ObservableObject {
 						  y: viewPoint.y)
 				: viewPoint
 		}
+		// 主体丢失/引导暂停时：锁定目标点仍然显示——它是"转回来"的参照
+		if let locked = lockedTargetPoint, compositionRectInView.width > 0 {
+			let viewPoint = CoordinateConverter.viewPoint(fromImagePoint: locked,
+														  rect: compositionRectInView)
+			return isFrontCamera
+				? CGPoint(x: CoordinateConverter.mirroredX(viewPoint.x, rectWidth: compositionRectInView.width),
+						  y: viewPoint.y)
+				: viewPoint
+		}
 		// 静态方案（无跟踪）：方案目标点直接上屏
 		if let plan = selectedPlan, plan.tracking == .none, compositionRectInView.width > 0 {
 			let viewPoint = CoordinateConverter.viewPoint(fromPlanTarget: plan.subjectTarget,
@@ -1295,11 +1346,22 @@ final class CaptureViewModel: ObservableObject {
 		return currentScene?.defaultInstruction ?? SceneClassifier.SceneKind.generic.defaultInstruction
 	}
 
-	/// 方向指令（§11：一次只给一条，优先级 水平 > 垂直 > 距离）
+	/// 方向指令（§11：一次只给一条，优先级 水平 > 垂直 > 距离；
+	/// 明确"手机"主语，避免与"移动主体"混淆；带出画保护）
 	private func directionText(for guidance: GuidanceResult) -> String {
+		// 出画保护：主体贴近边缘且当前指令会把它推出画面时，先稳住
+		if compositionRectInView.width > 0,
+		   let current = guidance.currentPointInView {
+			let nx = current.x / compositionRectInView.width
+			let ny = current.y / compositionRectInView.height
+			if nx < 0.07, guidance.horizontalDirection == .moveRight { return "主体快出画面了，先停一下" }
+			if nx > 0.93, guidance.horizontalDirection == .moveLeft { return "主体快出画面了，先停一下" }
+			if ny < 0.07, guidance.verticalDirection == .moveUp { return "主体快出画面了，先停一下" }
+			if ny > 0.93, guidance.verticalDirection == .moveDown { return "主体快出画面了，先停一下" }
+		}
 		switch guidance.horizontalDirection {
-		case .moveLeft: return isFrontCamera ? "向右移一点 →" : "向左移一点 ←"
-		case .moveRight: return isFrontCamera ? "向左移一点 ←" : "向右移一点 →"
+		case .moveLeft: return isFrontCamera ? "手机向右移一点 →" : "手机向左移一点 ←"
+		case .moveRight: return isFrontCamera ? "手机向左移一点 ←" : "手机向右移一点 →"
 		default: break
 		}
 		switch guidance.verticalDirection {

@@ -149,6 +149,11 @@ enum CompositionPlanMapper {
 
     /// 把远程方案数组映射为本地 CompositionPlan（过滤无效项，截取前 3 个）
     static func plans(from response: CompositionPlanResponse) -> [CompositionPlan] {
+        // 主体类型 → 跟踪方式：人物用人体检测，其余（物品/建筑/食物）用显著性
+        let subjectType = (response.mainSubject?.type ?? "").lowercased()
+        let looksLikePerson = subjectType.contains("person") || subjectType.contains("people")
+            || subjectType.contains("man") || subjectType.contains("woman")
+            || subjectType.contains("child") || subjectType.contains("人")
         let remotePlans = (response.plans ?? []).prefix(3)
         let mapped = remotePlans.compactMap { remote -> CompositionPlan? in
             guard let title = remote.title, !title.isEmpty else { return nil }
@@ -168,7 +173,7 @@ enum CompositionPlanMapper {
                 subjectTarget: CGPoint(x: x, y: yFromTop),
                 distance: .keep,
                 focalHint: normalizeFocal(remote.focalLength),
-                tracking: .person,
+                tracking: looksLikePerson ? .person : .saliency,
                 instruction: remote.instruction,
                 confidence: 0.9
             )
