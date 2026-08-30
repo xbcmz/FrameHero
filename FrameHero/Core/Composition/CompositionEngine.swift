@@ -151,15 +151,16 @@ final class CompositionEngine {
         detections: RawDetections,
         zoomFactor: CGFloat = 1.0,
         focalLength: Int = 24,
-        detectionMode: String = "Vision"
+        detectionMode: String = "Vision",
+        previousSubjectBox: CGRect? = nil
     ) -> CompositionResult {
         var result = CompositionResult()
         result.currentZoomFactor = zoomFactor
         result.currentFocalLength = focalLength
         result.detectionMode = detectionMode
 
-        // 1. 提取主主体（优先用人体，其次用人脸）
-        guard let mainSubject = extractMainSubject(from: detections) else {
+        // 1. 提取主主体（优先用人体，其次用人脸；带连续性偏好防跳变）
+        guard let mainSubject = extractMainSubject(from: detections, previousBox: previousSubjectBox) else {
             // 没有检测到人，返回低分结果
             result.score = 0
             result.person.detected = false
@@ -192,6 +193,16 @@ final class CompositionEngine {
             result.person.headRoom = 1.0 - mainSubject.maxY
         }
         result.bodyCount = detections.bodies.count
+
+        // 多人时计算群体包围盒（所有人体的并集），供群像构图方案使用
+        if detections.bodies.count >= 2 {
+            let minX = detections.bodies.map { $0.minX }.min() ?? 0
+            let maxX = detections.bodies.map { $0.maxX }.max() ?? 1
+            let minY = detections.bodies.map { $0.minY }.min() ?? 0
+            let maxY = detections.bodies.map { $0.maxY }.max() ?? 1
+            result.groupBoundingBox = CGRect(x: minX, y: minY,
+                                             width: maxX - minX, height: maxY - minY)
+        }
 
         // 2. 判断主体是否完整
         result.person.isFullBody = isSubjectFullyVisible(subject: mainSubject)
@@ -260,9 +271,26 @@ final class CompositionEngine {
 
     /// 提取主要主体
     /// 优先级：人体 > 人脸（人体通常更能代表完整的人物位置）
-    private func extractMainSubject(from detections: RawDetections) -> DetectedObject? {
-        // 优先取最大的人体
-        if let largestBody = detections.bodies.max(by: { $0.height < $1.height }) {
+    private func extractMainSubject(from detections: RawDetections,
+                                    previousBox: CGRect? = nil) -> DetectedObject? {
+        // 连续性加分：与上一帧主体重叠（IoU > 0.25）的候选获得 50% 高度加权，
+        // 避免多个相似大小时主体在人物间来回跳变
+        func continuityScore(_ candidate: DetectedObject) -> CGFloat {
+            guard let prev = previousBox else { return 0 }
+            let rect = CGRect(x: candidate.minX, y: candidate.minY,
+                              width: candidate.width, height: candidate.height)
+            let inter = rect.intersection(prev)
+            guard !inter.isNull, !inter.isEmpty else { return 0 }
+            let unionArea = rect.width * rect.height + prev.width * prev.height
+                - inter.width * inter.height
+            guard unionArea > 0 else { return 0 }
+            return inter.width * inter.height / unionArea > 0.25 ? 0.5 : 0
+        }
+
+        // 优先取最大的人体（带连续性加权）
+        if let largestBody = detections.bodies.max(by: {
+            $0.height * (1 + continuityScore($0)) < $1.height * (1 + continuityScore($1))
+        }) {
             return largestBody
         }
         // 其次取置信度最高的人脸

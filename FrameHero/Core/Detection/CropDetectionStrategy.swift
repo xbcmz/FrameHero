@@ -1,19 +1,6 @@
 import Foundation
-import Vision
-import AVFoundation
-import CoreGraphics
 
-/// 美学裁切检测协议，允许 Vision / CoreML 等多种后端共存。
-protocol CropDetectionStrategy: AnyObject {
-    func detectBestCrop(
-        in pixelBuffer: CVPixelBuffer,
-        orientation: CGImagePropertyOrientation,
-        targetAspectRatio: CGFloat,
-        completion: @escaping (AestheticCrop?) -> Void
-    )
-}
-
-/// 检测模式
+/// 检测模式：决定构图分析阶段用哪套模型/框架预测最佳裁切区（AdaCropPlanAdvisor 的 mode）。
 enum DetectionMode: String, CaseIterable, Identifiable {
     case vision
     case fast

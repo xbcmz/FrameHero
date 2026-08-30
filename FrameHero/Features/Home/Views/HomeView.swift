@@ -178,8 +178,8 @@ struct HomeView: View {
 
             assistantStatusRow(
                 icon: "sparkles",
-                title: "AI 建议",
-                status: aiAdviceStatus,
+                title: "AI 构图引导",
+                status: aiAdviceEnabled ? "已开启" : "已关闭",
                 isActive: aiAdviceEnabled
             )
 
@@ -187,8 +187,8 @@ struct HomeView: View {
                 .background(DesignSystem.Colors.backgroundSecondary)
 
             assistantStatusRow(
-                icon: "square.grid.3x3",
-                title: "构图评分",
+                icon: "wand.and.rays.inverse",
+                title: "场景识别",
                 status: aiAdviceEnabled ? "已开启" : "已关闭",
                 isActive: aiAdviceEnabled
             )
@@ -209,15 +209,9 @@ struct HomeView: View {
         )
     }
 
-    /// AI 建议服务的实时状态（云端 / 本地模拟 / 关闭）
+    /// AI 构图入口状态（场景识别 + 实时引导均为本地推理，零延迟）
     private var aiAdviceStatus: String {
-        guard aiAdviceEnabled else { return "已关闭" }
-        if aiConfig.isCloudConfigured {
-            let modelName = AIConfigurationStore.availableModels
-                .first { $0.id == aiConfig.model }?.name ?? aiConfig.model
-            return "DeepSeek · \(modelName)"
-        }
-        return "本地模拟"
+        aiAdviceEnabled ? "已开启" : "已关闭"
     }
 
     /// 人物检测引擎名（跟随设置页的构图引擎选择）

@@ -1,13 +1,144 @@
 # LiveCapture 优化交接文档
 
 > 用途：开新对话时让 AI 先读本文件（说「先读 OPTIMIZATION_HANDOFF.md」即可接上进度）。
-> 更新时间：2026-08-29（v1.0.0 稳定基线已打 tag）。GitHub 已同步（origin: git@github.com:xbcmz/FrameHero.git，仓库已改名）。
+> 更新时间：2026-08-29（dev 分支完成第七批：产品范式重构，AI 构图成为主体验）。GitHub origin: git@github.com:xbcmz/FrameHero.git；main = v1.0.0 稳定基线（旧范式），dev = 新范式开发线。
+
+## 第七批（dev 分支，2026-08-29：产品范式重构——AI 构图成为主体验）
+
+> 背景：用户判断原方向（LiveCapture 魔法棒 + AI 贴片）与初衷背离，对标可颂「灵感跟拍」（场景识别→配方建议）与 Doka Cam（一次触发→极简 AR 引导）重构拍摄页。
+
+- **魔法棒流水线整体下线**：构图流水线开关、裁切框/追踪点/中心圆、BoxCenterManager 对齐、CoreML AdaCrop 裁切检测、9 阶段状态机全部移除；CameraControlEngine 三态控制、点按对焦、变焦盘保留，自动拍摄改造后复用（构图达标触发）
+- **新增「AI 构图会话」（Doka 式一次触发）**：快门左侧 sparkle 按钮 → CoachPhase 状态机（idle/analyzing/guiding/achieved）
+  - SceneClassifier（新文件）：VNClassifyImageRequest 多帧投票 + 滞回 → 7 类场景（人像/美食/夜景/风景/街拍/文档/通用）
+  - 场景 → 参数预设：只改写 aiAuto 参数（人像=主体锁定+浅景深，美食=微距+自然白平衡，夜景=夜景+低噪，风景=超广角+深景深，街拍=凝固运动）
+  - 构图引导：CompositionGuidanceEngine 数据层复用 → CompositionCoachOverlayView（新文件）：淡三分线 + 场景标签 + 一行建议 chip，达标即绿色确认 + 可选自动拍摄
+- **DeepSeek 退出实时路径**：PhotographyAdvisor 新增 `isCloudAdviceEnabled`（默认 false），实时引导纯本地 Vision 零延迟；LLM 留给拍后点评（未实现），换模型只需换 aiProvider 实现
+- **删除文件（6）**：DebugPanel / AIGuidanceOverlayView / CompositionAdviceCard / ContentOverlayView / BoxCenterManager / CoreMLCropDetector（检测协议 CropDetectionStrategy.swift 保留，DetectionMode 枚举在其中）；UniformPointSmoother 从 BoxCenterManager 迁回 UniformSmoother.swift
+- CaptureViewModel 1322 行 → ~700 行；快门评分快照仅在 AI 会话中产生（未开会话的照片无评分）；`aiAdviceEnabled` 语义改为「AI 构图入口开关」，默认开
+- 已知待调：场景识别粒度（系统分类器较粗）、无主体场景的目标构图质量、chip 文案节奏；真机验证清单：会话首帧分析速度、场景切换滞回手感、前置镜像指令方向
+
+## 第八批（dev 分支，2026-08-29：交互节奏与反馈打磨 A/B/C 三批）
+
+### A 批：出片时刻的反馈闭环
+- **自动拍摄倒计时可视化**（修"静默拍照"）：达标 → 快门键出现绿色进度环 + 剩余秒数，`HapticManager.countdown` 逐步渐强震动；**倒计时中失稳自动取消**（coachPhase 退回 guiding，chip 提示"手抖了，稳住重新构图"），比拍糊再删好
+- **达标仪式感**：三分线 spring 渐隐至 35% + 快门绿色呼吸脉冲描边（倒计时启动后脉冲让位给进度环）
+- **场景宣告**：具体场景识别成功 → selection 震动 + 场景标签弹性入场（scale+opacity transition）
+
+### B 批：指令可读性
+- 状态图标只表达三态（viewfinder/sparkles/checkmark），方向全部文字化；复合指令可叠加（"再靠近一点，向左移一点"）
+- chip 防抖状态机 `publishSuggestion`：相同文案不发布、最小驻留 400ms、反向指令（左↔右/近↔远/高↔低）冷却 600ms，未到期保留最新意图延迟补发；首条文案直达
+
+### B/C 批：会话过渡与手势
+- AI 会话进入/退出：覆盖层 scale+opacity spring 过渡（idle 时缩至 0.94 隐去）
+- **点按预览区 = 退出 AI 会话**（会话中点按对焦让位），空闲时仍是点按对焦
+- **长按快门连拍**：0.45s 进入连拍（350ms 间隔 + 轻震），松手结束；连拍走 capturePhoto（评分快照每次独立）
+
+### C 批：布局修正与联动
+- **修 bug**：右侧参数列 bottom padding 300pt 是旧三行布局遗物，会压到 AI/翻转键 → 动态计算（有变焦盘 248 / 无 148）
+- **变焦联动**：场景推荐镜头（风景→超广角等）与当前倍率差 >0.3 时，变焦盘对应焦段黄色呼吸高亮
+
+真机验收链路：开自动拍摄 → 达标看倒计时/听震动 → 故意晃手看取消 → 稳住重新达标 → 长按快门连拍；前置模式下确认指令方向语义。
+
+## 第九批（dev 分支，2026-08-29：AI 摄影师 MVP——构图方案）
+
+> 依据用户提供的《AI 构图拍照 MVP 开发方案》实施 P0：一次分析 → 结构化构图方案（1~3 个）→ 用户选择 → 实时引导 → 完成判断 → 拍摄。
+
+- **新增 `CompositionPlan.swift`**：
+  - 模型：CompositionPlan（title/styleWord/detail/composition/subjectTarget/distance/focalHint/tracking/confidence），PlanCompositionStyle 七类（三分/居中对称/引导线/框架/前景层次/留白/人物环境），PlanDistance，PlanTracking（person/saliency/none）
+  - 坐标约定：方案 y 从顶部计（0=顶），选中时转 1-y 给引擎
+  - **`CompositionPlanProviding` 协议 = AI 扩展点**：MVP 默认 `LocalHeuristicPlanProvider`（本地启发式：场景+主体快照→方案，零网络离线可用）；接 VLM 时实现同协议即可（AI 仅在点「AI 构图」时调用一次，实时跟踪仍全本地）
+- **CoachPhase 新增 `.plans`**：会话流程 idle → analyzing（积累 0.9s 场景/主体证据）→ **plans（方案卡片）** → guiding → achieved
+- **方案卡片 UI**（CompositionCoachOverlayView，.plans 阶段可点击）："AI 摄影师·发现 N 种拍法" + 卡片（标题/风格词/说明/推荐标记）+ 取消；选中 → selection 震动 → 进入引导
+- **方案驱动的目标系统**：目标位置/距离目标来自所选方案；距离建议映射目标主体高度（closer≥0.68 / farther≤0.3 / keep=当前）；chip 标签用方案标题
+- **显著性跟踪**：非人物方案用 VNGenerateAttentionBasedSaliencyImageRequest 跟踪"当前主体"（EWMA 平滑防抖），人物方案仍走 Vision 人脸/人体；none 方案（正对文档）静态标记圈无位置反馈
+- 焦段建议：方案 focalHint（"2x"/"0.5x"）→ 变焦盘黄色高亮提示（P1 的自动切换暂不做）
+- 人物离开画面 >1.5s：取消自动拍摄 + 提示重新取景
+- 真机待验证：方案卡片出现节奏（~1s）、显著性跟踪稳定性、无人物场景方案实用性
+
+## 第十批（dev 分支，2026-08-29：人物检测引擎与 AI 构图深度结合，A+B 两批）
+
+> 背景：用户确认不废弃 DetectionMode/AdaCrop 模型，要求让人物检测引擎与 AI 构图相互辅助。
+
+### A 批：多人物群像感知 + 主体连续性（纯 Vision，零成本）
+- CompositionResult 新增 `groupBoundingBox`（所有人体并集，y 向上）
+- 构图引擎主主体提取加 **IoU 连续性加权**：与上一帧主体重叠 >0.25 的候选获 50% 高度加分，多人在画面时主体不再跳变（Advisor 记录并传递上一帧主体框）
+- 方案生成：两人及以上出**群像方案**（居中合影/全员全景/前排特写，焦段建议随超广角/长焦可用性），跟踪群体包围盒而非单人
+
+### B 批：AdaCrop 模型重新上岗——方案"参谋"（Fast/Pro 设置从此有真实差异）
+- 新增 `AdaCropPlanAdvisor.swift`（从 git 历史回收原 CoreMLCropDetector 的预处理：方形裁剪 + Accelerate CHW 转换 + 坐标映射；只保留 BBox 模型，去掉 Actor 精修）
+- **调用时机**：AI 会话分析阶段积累 0.9s 证据后调用一次（非每帧），预测当前画面的最佳构图裁切区
+- **校准机制**（PlanGeometry.mapThroughCrop）：把主体当前位置映射进最佳裁切区 → 得到"按模型的意思裁完后主体应落的点"作为方案目标；人物方案在生成时校准，显著性方案在首次定位时校准（calibrateFromCrop 标记）；映射失败/区域退化自动回退纯规则
+- **DetectionMode 设置重新有意义**：Vision=纯规则方案（不跑模型）、Fast=Student 模型校准、Pro=Teacher 模型校准
+- 新增 `PlanGeometry.mapThroughCrop`（主体在裁切区外返回 nil，带 0.06-0.94 边缘钳制）
+
+## 第十一批（dev 分支，2026-08-29：Phase 0——DeepSeek 视觉模型对接）
+
+> 依据用户《AI 构图拍照 MVP 开发方案》Phase 0 规范执行。新模型：DeepSeek-V4-Flash-Vision-Exp。
+
+### Phase 0.1 架构勘察结论（先勘察后动手）
+1. 现用模型：deepseek-chat / deepseek-reasoner（设置页可选）——均为纯文本模型
+2. API 格式：POST {baseURL}/chat/completions（OpenAI 兼容）
+3. 是否纯文本：是——messages[].content 为纯字符串
+4. 能否发图：不能——无多模态 content 数组、无 base64 通道
+5. API 层多模态支持：无（解析端也只认 String）
+6. 抽象可换模型：可以（Provider 协议体系健在），但视觉能力需独立新抽象
+结论：不动文本服务，按 Phase 0.2 建独立视觉抽象。
+
+### 实施
+- **Phase 0.2**：新增 `Core/AI/Vision/VisionAIService.swift`——`VisionAIService` 协议（图片+提示词→文本，传输层抽象，未来 Qwen-VL 等只需实现协议）+ `DeepSeekVisionService`（OpenAI 兼容多模态消息：content = [text, image_url(data URL base64)]）+ `SceneAnalysis`（scene/main_subject/description，稳健 JSON 解析容忍围栏）+ `VisionAIServiceFactory`
+- **Phase 0.3**：`VisionTestSheet`（拍摄页「···」菜单 → "AI 视觉连通性测试"，仅在云端配置就绪时显示）：自动取当前帧 → 发图 → 解析 → 展示 场景/主体/描述 + 失败原因；成功标准五项全部覆盖
+- **Phase 0.4**：`ImagePreparationService`——相机帧 → 方向校正 → 等比降采样(≤1024) → JPEG 0.65 → data URL（避免原帧 base64 数 MB 请求体）
+- **Phase 0.5**：`VisionAIConfiguration`——provider/model（deepseek-v4-flash-vision-exp）/baseURL/apiKey 集中管理，模型名零散硬编码为零；上层只依赖 VisionAIService 协议
+- VM 新增 `captureFrameForVision`（一次性取帧，不持有缓冲、不干扰 AI 会话状态机）；菜单入口仅云端配置就绪时出现
+- ⚠️ 待真机验证：exp 模型的模型 ID 字符串与多模态消息格式（当前按 OpenAI 兼容 text+image_url 实现；若平台要求其他字段，只需改 DeepSeekVisionService 一处）
+- **视觉模型已纳入模型选择**（真机测试通过后的跟进）：设置页「AI 助手 → 模型」拆为两条线——文本模型（通用 V3/深度思考 R1，拍后点评用）+ **视觉模型（V4 Flash Vision，图片理解用）**，各自独立持久化（ai.visionModel）；`VisionAIConfiguration.current()` 读取用户选择；后续上新的视觉模型只需往 `availableVisionModels` 加一条
+
+## 第十二批（dev 分支，2026-08-30：MVP Final Plan——DeepSeek Vision 驱动构图方案）
+
+> 依据用户《AI Camera MVP Final Development Plan》实施。核心变化：**方案生成从本地启发式升级为 DeepSeek Vision（V4-Flash-Vision-Exp）从真实画面生成**，本地启发式降级为兜底。
+
+- **新增 `CompositionPlanGeneration.swift`**：§16 系统角色提示词（AI 摄影指导）+ §6 输出契约（scene/main_subject/plans[]，含 subject_target/camera_action/focal_length/instruction）+ 宽松解析（容忍围栏）+ `CompositionPlanMapper`（composition 字符串宽松映射，subject_target 钳制 0.06-0.94，缺失回退右三分）
+- **CompositionPlan 新增 `instruction` 字段**：AI 生成的动作指令，选中方案时作为首条 chip 文案
+- **VM 云方案流**：startAIComposition → 云端配置就绪则取帧 → DeepSeek Vision（一次请求）→ 解析 → .plans；**§18 错误处理**：JSON 无效重试一次、请求失败重试一次，仍失败回退本地启发式方案并提示原因（相机永不因云端失败不可用）；原始响应 print 留痕
+- **§11 方向指令**：改为单条输出，优先级 水平 > 垂直 > 距离（此前三方向叠加文案）
+- **§17 状态机**：分析中 AI 键禁用（防并发分析请求）；CoachPhase 已天然满足 状态机
+- **§12 自动拍照默认改为手动**（AppStorage 默认 false，用户仍可在菜单开启）——倒计时/防抖机制保留
+- **§13 CoordinateConverter**：图像坐标↔视图坐标↔前置镜像换算收拢为专属工具，标记点显示已迁移
+- **§20 安全**：Key 仍在 Keychain（开发期直连）；生产上线前需后端代理（已在方案内注明）
+- 真机待验证：DeepSeek Vision 出方案延迟（≤30s 超时）、方案质量（真实画面驱动 vs 规则）、instruction 首条指令的引导手感
+
+## 第十三批（dev 分支，2026-08-30：P1 收尾 + 拍后点评闭环）
+
+- **方案焦段自动执行**（P1 auto lens switching）：选中方案时若焦段建议与当前倍率差 >0.05，自动 ramp 到对应预设；变焦盘高亮随之自然消退
+- **引导进度可视化**：chip 在调整中显示匹配百分比（guidance.progress），强化"正在收敛"感知
+- **拍后 AI 点评**（路线图闭环项）：照片浏览器新增 ✨ 入口 → `PhotoCritiqueSheet`：原图预处理 → DeepSeek Vision（用户选择的视觉模型）→ 结构化点评（**得分 + 一句话总评 + 亮点 + 下次可以这样拍**）；请求自动附上拍摄上下文（EXIF + 快门时刻的 AI 构图评分 + 检测引擎），点评能回应"当时引导的效果"
+- 新文件：`PhotoCritique.swift`（模型+提示词+解析）、`PhotoCritiqueSheet.swift`（面板）
+- 至此 AI 摄影师完整闭环：拍前方案引导（本地实时）+ 拍后点评复盘（云端视觉模型）
+
+## 第十四批（dev 分支，2026-08-30：P1 收官——姿态水平仪/距离估算/场景化覆盖层）
+
+- **姿态水平仪**（替代 ARKit 方案，CoreMotion 零依赖）：`cameraRollDegrees`（attitude.roll，7Hz 节流）→ 引导中绘制随侧倾旋转的水平参考线，|roll|>2.5° 转黄；chip 水平提示最优先（"画面向左倾斜，先摆平"）——先摆平再构图。⚠️ roll 符号语义待真机确认，若相反翻转一处即可
+- **距离估算**（人物方案）：主体画面占比 × 变焦倍率 → 米数区间（"距主体约 2 米"），显示在 chip 下方；启发式映射（人脸/人体高度 + 经验焦距），标注"约"
+- **场景化覆盖层**（P1 scene-specific overlays）：按方案构图类型切换引导元素——三分网格（三分法/留白/环境人像）/ 中心十字+参考圆（居中对称/特写/美食）/ 文档取景框（正对文档）
+- 至此 MVP Final Plan 的 P0 + P1 全部落地；P2（自定义构图模型/个性化风格/AR 动态引导）为远期
+
+## 第十五批（dev 分支，2026-08-30：修"主体丢了还一直指挥移动"）
+
+> 用户报告：拍物品时 AI 一直让左移，主体都出画面了还在指挥。根因：显著性跟踪在主体出画面后**冻结在丢失前一刻的位置**继续算偏差——对一个不存在的点永远有"方向"，指挥永不停。
+
+- **显著性丢失超时**（0.7s）：丢失超时后停止方向指挥（coachGuidance = nil），chip 改为"主体出画面了，转回标记圈的位置"；**标记圈此时仍显示**（锁定目标点是"转回来"的参照，displayTargetMarkerPoint 回退到 lockedTargetPoint）
+- **显著性跳变拒绝**：单帧位移 >0.35 视为背景抢焦点的误检直接忽略（连续 3 帧才接受新位置）——防显著性在主体与背景间乱跳导致指令震荡
+- **出画保护**（directionText）：主体贴近边缘（7%）且当前指令会把它推出画面时，改喊"主体快出画面了，先停一下"
+- **指令主语明确化**：方向文案改为"手机向左移一点 ←"——消除"移动手机还是移动主体"的歧义（用户移错方向导致出画的常见原因）
+- **云方案跟踪方式推断**：按响应 main_subject.type 判定（person 类→人体检测，其余→显著性）；selectPlan 时若推断为人物但画面无人（拍物品）自动降级为显著性跟踪
+- 人物丢失提示从 1.5s 提前到 0.6s，文案统一"出画面了，转回标记圈"
 
 ## 版本基线与分支约定
 
-- **稳定基线：tag `v1.0.0`**（2026-08-29）——后续改造基于此版本
+- **当前稳定基线：tag `v1.1.0`**（2026-08-30，AI 摄影师完整闭环版）；历史基线 `v1.0.0`（2026-08-29，旧范式完整功能版）
 - 分支约定：`main` 保持稳定（每个稳定点打 `v1.x` tag），日常改造在 `dev` 分支进行，稳定后合回 main 并打新 tag
-- 回到基线：`git checkout v1.0.0`（只看）；在 dev 上改坏可 `git reset --hard v1.0.0`（丢弃 dev 未推送改动）或从 main 重新开分支
+- v1.1.0 相对 v1.0.0 的核心变化：产品范式重构（AI 构图会话取代魔法棒）、DeepSeek Vision 驱动构图方案、拍后点评、拍摄体验五件套（清晰度预审/自拍倒计时/常驻水平仪/曝光提示/连拍优选）、群像/前视空间/主体连续性、交互全面打磨；Info.plist 版本号同步 1.1.0
+- 回到基线：`git checkout v1.1.0`（只看）；在 dev 上改坏可 `git reset --hard v1.1.0`（丢弃 dev 未推送改动）或从 main 重新开分支
 - GitHub 仓库已改名 FrameHero，本地 remote 已同步更新
 
 ## 项目位置与验证命令

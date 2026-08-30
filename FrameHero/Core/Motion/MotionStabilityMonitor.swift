@@ -309,9 +309,13 @@ final class MotionStabilityMonitor: ObservableObject {
 				DispatchQueue.main.async {
 					self.largeMotionDetected = true
 				}
-				DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+				// largeMotionFlag 是 dataQueue 专属镜像状态，必须回到 dataQueue 复位，
+				// 否则会和 updateStability() 在不同线程读写同一变量（数据竞争）
+				self.dataQueue.asyncAfter(deadline: .now() + 0.5) {
 					self.largeMotionFlag = false
-					self.largeMotionDetected = false
+					DispatchQueue.main.async {
+						self.largeMotionDetected = false
+					}
 				}
 			}
 		}
@@ -326,8 +330,11 @@ final class MotionStabilityMonitor: ObservableObject {
         }
         
         // 判断整体稳定性状态
+        // 注意：这里必须读 dataQueue 内部镜像 stableState，不能读 @Published isStable——
+        // isStable 只在主线程写入，dataQueue 上直接读取是跨线程数据竞争，
+        // 且主线程写入是异步的，读到的可能是尚未生效的旧值，导致迟滞判断基于错误的当前状态
         let overallStable: Bool
-        if isStable {
+        if stableState {
             // 如果当前是稳定状态，需要连续不稳定帧超过阈值才切换为不稳定
             overallStable = consecutiveUnstableFrames < maxUnstableFrames
         } else {
@@ -335,10 +342,10 @@ final class MotionStabilityMonitor: ObservableObject {
             overallStable = consecutiveStableFrames >= requiredStableFrames
         }
         
-        // 创建详细的调试信息，包含连续帧信息
-        let debugText = "加速度: \(String(format: "%.3f", accStd))/\(String(format: "%.2f", accelerationStdThreshold)), 陀螺仪: \(String(format: "%.3f", gyroStd))/\(String(format: "%.2f", gyroStdThreshold)), 连续稳定: \(consecutiveStableFrames)"
-
+        // 调试信息只在 DEBUG 下构建：String(format:) + 字符串拼接有开销，
+        // Release 下两处用途都在 #if DEBUG 里，之前无条件构建是 20Hz 高频路径上的纯开销
         #if DEBUG
+        let debugText = "加速度: \(String(format: "%.3f", accStd))/\(String(format: "%.2f", accelerationStdThreshold)), 陀螺仪: \(String(format: "%.3f", gyroStd))/\(String(format: "%.2f", gyroStdThreshold)), 连续稳定: \(consecutiveStableFrames)"
         print("稳定性检测 - \(debugText), 整体稳定: \(overallStable)")
         #endif
 

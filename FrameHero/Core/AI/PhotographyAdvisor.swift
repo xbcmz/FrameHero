@@ -106,8 +106,16 @@ final class PhotographyAdvisor {
     /// AI 建议节流间隔（秒）—— 避免频繁调用 API
     private let aiThrottleInterval: TimeInterval = 3.0
 
+    /// 是否启用云端 LLM 建议。
+    /// 实时构图路径保持 false（本地 Vision/CoreML 实时引导），
+    /// 拍后点评等场景可显式打开。换模型只需替换 aiProvider 实现
+    var isCloudAdviceEnabled = false
+
     /// 上次 AI 请求时间
     private var lastAIRequestTime: Date?
+
+    /// 上一帧主主体框（供构图引擎做主体连续性匹配）
+    private var lastMainSubjectBox: CGRect?
 
     // MARK: - 初始化
 
@@ -174,18 +182,32 @@ final class PhotographyAdvisor {
             var compositionResult = self.compositionEngine.analyze(
                 detections: rawDetections,
                 zoomFactor: zoomFactor,
-                focalLength: focalLength
+                focalLength: focalLength,
+                previousSubjectBox: self.lastMainSubjectBox
             )
 
             // 补充镜头信息
             compositionResult.currentZoomFactor = zoomFactor
             compositionResult.currentFocalLength = focalLength
+
+            // 记录本帧主主体框，供下帧做连续性匹配
+            if compositionResult.person.detected {
+                let p = compositionResult.person
+                self.lastMainSubjectBox = CGRect(x: p.centerX - p.widthRatio / 2,
+                                                 y: p.centerY - p.heightRatio / 2,
+                                                 width: p.widthRatio,
+                                                 height: p.heightRatio)
+            } else {
+                self.lastMainSubjectBox = nil
+            }
             
             // Step 2.5: 生成目标构图
             let target = self.compositionEngine.generateTarget(from: compositionResult)
             
-            // Step 3: AI 建议（节流控制）
-            let shouldRequestAI = self.shouldRequestAI(for: compositionResult)
+            // Step 3: AI 建议（节流控制）。
+            // 实时构图路径不请求 LLM（isCloudAdviceEnabled=false）：
+            // 逐帧文本建议延迟高、读不过来，LLM 留给拍后点评
+            let shouldRequestAI = self.isCloudAdviceEnabled && self.shouldRequestAI(for: compositionResult)
             
             if shouldRequestAI {
                 self.lastAIRequestTime = Date()

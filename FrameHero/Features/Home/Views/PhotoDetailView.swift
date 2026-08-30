@@ -9,6 +9,7 @@ struct PhotoBrowserView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var currentIndex: Int
     @State private var showExportSheet = false
+    @State private var showCritiqueSheet = false
     @State private var exportImage: UIImage?
     /// 原图直出时保存的原始 JPEG 字节（不经重编码）
     @State private var exportRawData: Data?
@@ -56,21 +57,35 @@ struct PhotoBrowserView: View {
 
                     Spacer()
 
-                    Button {
-                        prepareExport()
-                    } label: {
-                        if isGenerating {
-                            ProgressView()
-                                .progressViewStyle(CircularProgressViewStyle(tint: .white))
-                        } else {
-                            Image(systemName: "square.and.arrow.down")
+                    HStack(spacing: 10) {
+                        // AI 拍后点评
+                        Button {
+                            HapticManager.shared.light()
+                            showCritiqueSheet = true
+                        } label: {
+                            Image(systemName: "sparkles")
                                 .font(.system(size: 16, weight: .semibold))
                                 .foregroundColor(.white)
                                 .padding(12)
                                 .background(Circle().fill(Color.black.opacity(0.5)))
                         }
+
+                        Button {
+                            prepareExport()
+                        } label: {
+                            if isGenerating {
+                                ProgressView()
+                                    .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                            } else {
+                                Image(systemName: "square.and.arrow.down")
+                                    .font(.system(size: 16, weight: .semibold))
+                                    .foregroundColor(.white)
+                                    .padding(12)
+                                    .background(Circle().fill(Color.black.opacity(0.5)))
+                            }
+                        }
+                        .disabled(isGenerating)
                     }
-                    .disabled(isGenerating)
                 }
                 .padding(.horizontal, 16)
                 .padding(.top, 8)
@@ -108,6 +123,14 @@ struct PhotoBrowserView: View {
         .navigationBarHidden(true)
         .sheet(isPresented: $showExportSheet) {
             exportPreviewView
+        }
+        .sheet(isPresented: $showCritiqueSheet) {
+            if let record = records[safe: currentIndex] {
+                PhotoCritiqueSheet(
+                    record: record,
+                    photoProvider: photoProvider
+                )
+            }
         }
     }
 

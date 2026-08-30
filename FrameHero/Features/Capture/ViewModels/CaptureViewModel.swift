@@ -2,165 +2,28 @@
 //  CaptureViewModel.swift
 //  FrameHero
 //
-//  拍摄功能的视图模型
+//  拍摄功能的视图模型（AI 构图版）
 //
 //  ## 文件作用
-//  协调相机、运动传感器和 AI 检测模块
-//  管理整个智能拍摄流程的状态机
-//  为 CaptureView 提供所有业务逻辑和状态
+//  协调相机、运动传感器与 AI 构图引擎，为 CaptureView 提供状态与动作。
 //
-//  ## 主要类
-//  ### CaptureViewModel
-//  拍摄功能视图模型（ObservableObject）
+//  ## 产品范式（借鉴 Doka Cam）
+//  相机平时是纯净的；用户点一次 AI 按钮 → 进入「AI 构图会话」：
+//  场景识别（Vision 分类器，多帧投票）→ 场景参数预设 → 极简实时引导
+//  （淡三分线 + 一条建议 chip）→ 构图完成提示（可选自动拍摄）。
+//  没有魔法棒、没有裁切框中心圆、没有实时评分上屏、没有逐帧 LLM 文本。
 //
-//  ## Dependencies（依赖项）
-//  - camera: CameraManager - 相机管理器
-//  - motion: MotionStabilityMonitor - 运动监控器
-//  - aestheticDetector: AestheticCropDetector - 美学检测器
-//  - boxCenterManager: BoxCenterManager - 追踪点管理器
+//  ## 数据流
+//  相机帧(30-60fps)
+//    └→ AI 构图会话激活时（10fps 节流 + 单帧防抖）
+//        ├→ SceneClassifier：VNClassifyImageRequest 多帧投票 → SceneKind
+//        │    └→ 场景参数预设（经 PhotographyStrategy 三态过滤下发）
+//        └→ PhotographyAdvisor（Vision 人体/人脸检测 → CompositionEngine 评分）
+//             └→ CompositionGuidanceEngine → GuidanceResult → 极简引导 UI
+//  快门：AVCapturePhotoOutput → 3:4 裁剪(保EXIF) → PhotoStorageService
 //
-//  ## Published 状态
-//  - cropRectInView: CGRect? - 当前裁切框位置
-//  - initialCropRectInView: CGRect? - 初始检测的裁切框
-//  - compositionRectInView: CGRect - 构图区域
-//  - isAligned: Bool - 是否对齐中心
-//  - debugMessage: String - 调试信息
-//  - pipelineStage: PipelineStage - 当前流程阶段
-//  - distanceToCenter: CGFloat? - 到中心的距离
-//  - detectionReady: Bool - 检测是否就绪
-//  - motionIsStable: Bool - 设备是否稳定
-//  - zoomState/zoomPresets/zoomRange - 变焦相关状态
-//  - userGuidanceText: String - 用户引导文字
-//  - isAutoCaptureEnabled: Bool - 是否启用自动拍照
-//  - captureDelay: Double - 拍照延迟（秒）
-//  - isSwitchingCamera: Bool - 是否正在切换摄像头
-//  - isCompositionPipelineEnabled: Bool - 是否启用构图自动化流水线
-//
-//  ## 计算属性
-//  - baseBoxCenterInView: CGPoint? - 基准中心点
-//  - boxCenterInView: CGPoint? - 当前中心点
-//  - isFrontCamera: Bool - 是否为前置摄像头
-//  - adjustedCropRectInView: CGRect? - 调整后的裁切框
-//  - zoomDisplayText: String - 变焦显示文本
-//  - focalLengthText: String - 焦距显示文本
-//  - session: AVCaptureSession - 相机会话
-//
-//  ## 主要方法
-//
-//  ### 生命周期
-//  - init(): 初始化依赖和绑定
-//  - onAppear(): 视图出现时启动相机和传感器
-//  - onDisappear(): 视图消失时停止所有服务
-//
-//  ### 相机控制
-//  - capturePhoto(): 触发拍照
-//  - toggleCameraPosition(): 切换前后摄像头
-//    包含翻转动画和状态重置
-//
-//  ### 变焦控制
-//  - selectZoomPreset(_:): 选择变焦预设
-//  - updateZoomInteractively(to:): 交互式变焦
-//  - finalizeZoomInteractively(at:smooth:): 完成交互式变焦
-//
-//  ### 状态管理
-//  - registerCompositionRect(_:): 注册构图区域尺寸
-//  - resetDetectionState(): 重置所有检测状态
-//  - toggleAutoCapture(): 切换自动拍照开关
-//  - setCaptureDelay(_:): 设置拍照延迟
-//  - toggleCompositionPipeline(): 切换构图自动化流水线开关
-//    开启时显示"构图流水线已开启"提示
-//    关闭时显示"点击魔术棒开启智能构图"提示
-//
-//  ### 其他功能
-//  - openSystemPhotoLibrary(): 打开系统相册
-//
-//  ## 私有方法
-//
-//  ### 绑定
-//  - bindMotion(): 绑定运动传感器事件
-//    - 订阅 deviceMotion 更新追踪点
-//    - 订阅 isStable 控制检测流程
-//    - 订阅 largeMotionDetected 自动重置
-//
-//  - bindCamera(): 绑定相机事件
-//    - 订阅 lastPhotoSaved 显示保存结果
-//    - 订阅 zoomState 更新变焦显示
-//    - 订阅 zoomPresets/zoomRange
-//
-//  ### 处理流程
-//  - setupCallbacks(): 设置相机帧回调
-//  - handleSampleBuffer(_:): 处理视频帧
-//    - 等待稳定
-//    - 触发 AI 检测
-//    - 传递给检测管线
-//
-//  - detectCropRegion(using:orientation:): 执行裁切区域检测
-//    - 调用 AestheticCropDetector
-//    - 转换坐标到视图空间
-//    - 设置基准中心点
-//    - 锁定参考姿态
-//
-//  ### 自动拍照
-//  - scheduleAutoCapture(): 调度自动拍照任务
-//    在对齐后延迟执行
-//
-//  - cancelAutoCapture(): 取消自动拍照任务
-//
-//  ### 对齐检测
-//  - checkAlignmentByDistance(): 检查距离对齐
-//    - 调用 BoxCenterManager 检测
-//    - 对齐时触发自动拍照
-//    - 失去对齐时取消拍照
-//
-//  ### 状态控制
-//  - setStage(_:message:): 设置流程阶段
-//    - 更新 pipelineStage
-//    - 更新 debugMessage
-//    - 调用统一刷新机制更新 userGuidanceText
-//    - 线程安全
-//
-//  - refreshUserGuidance(): 统一的用户引导文本刷新机制
-//    - 根据 isCompositionPipelineEnabled 状态决定显示内容
-//    - 流水线开启时：显示当前阶段引导或"构图流水线已开启"
-//    - 流水线关闭时：显示"点击魔术棒开启智能构图"
-//    - 被所有需要更新引导文本的方法调用
-//
-//  ### 几何转换
-//  - makeCompositionPixelBuffer(from:orientation:): 
-//    创建 3:4 构图像素缓冲
-//
-//  - pixelOrientation(for:): 判断像素缓冲方向
-//
-//  - rotateNormalizedRect(_:for:): 旋转归一化矩形
-//
-//  - rectInCompositionSpace(from:orientation:): 
-//    转换检测框到视图坐标系
-//
-//  ## 流程状态机（PipelineStage）
-//  - idle: 空闲
-//  - startingCamera: 启动相机
-//  - waitingForStability: 等待稳定
-//  - detectingRegion: 检测区域
-//  - templateReady: 模板就绪（追踪中）
-//  - readyToCapture: 准备拍照
-//  - capturingPhoto: 正在拍照
-//  - savingPhoto: 保存照片
-//  - error: 错误
-//
-//  每个阶段有对应的：
-//  - progress: Double - 进度值
-//  - guidanceText: String - 引导文字
-//
-//  ## 线程处理
-//  - 视频帧在 videoOutputQueue 处理
-//  - AI 检测在专用队列异步执行
-//  - UI 状态更新确保在主线程
-//  - 使用 Combine 管理异步事件流
-//
-//  ## 性能优化
-//  - detectionInProgress 标志避免重复检测
-//  - 使用 static ciContext 共享 Core Image 上下文
-//  - 帧处理前检查稳定性减少无效计算
+//  ## 线程约定
+//  sessionQueue（会话/硬件）、videoOutputQueue（帧）、主线程（UI/@Published）
 //
 
 import Foundation
@@ -171,103 +34,137 @@ import CoreMotion
 
 #if os(iOS)
 import SwiftUI
+import Vision
 
 /// 拍摄功能的视图模型
 final class CaptureViewModel: ObservableObject {
 	// MARK: - Dependencies
-	
+
 	private(set) var camera = CameraManager()
 	private let motion = MotionStabilityMonitor()
-	private let detector: CropDetectionStrategy
-	private let boxCenterManager = BoxCenterManager()
 	private let photographyAdvisor: PhotographyAdvisor
-	private let visionDetector: AestheticCropDetector?  // 只有 vision 模式才有
+	private let sceneClassifier = SceneClassifier()
+	private let guidanceEngine = CompositionGuidanceEngine()
+
+	// MARK: - AI 构图会话
+
+	/// 会话阶段
+	enum CoachPhase: Equatable {
+		case idle        // 会话未激活（纯净相机）
+		case analyzing   // 正在分析场景
+		case plans       // 展示构图方案（等待用户选择）
+		case guiding     // 实时引导中
+		case achieved    // 构图完成
+	}
+
+	@Published private(set) var coachPhase: CoachPhase = .idle
+	/// 场景标签（如"美食场景"，未识别稳定时为 nil）
+	@Published private(set) var coachSceneLabel: String?
+	/// 一行建议指令（chip 文案）
+	@Published private(set) var coachSuggestion: String = ""
+	/// 实时引导结果（供 UI 显示，前置摄像头已做镜像校正）
+	@Published private(set) var coachGuidance: GuidanceResult?
+
+	// MARK: - 构图方案（Composition Plan）
+	/// 分析产出的构图方案（最多 3 个，按推荐度排序）
+	@Published private(set) var compositionPlans: [CompositionPlan] = []
+	/// 当前选中方案的序号
+	@Published private(set) var selectedPlanIndex: Int?
+	/// 方案生成器（本地启发式：云方案失败时的兜底，以及 Vision 引擎档的规则方案）
+	private let planProvider: CompositionPlanProviding = LocalHeuristicPlanProvider()
+	/// DeepSeek Vision 云方案请求状态
+	private var cloudPlanInFlight = false
+	private var cloudFrameData: Data?
+	private var cloudAttempt = 0
+	/// 本次会话生效的构图分析模式（开始时从设置快照，会话过程中不随设置页切换而变）
+	private var activeAnalysisMode: AIConfigurationStore.CompositionAnalysisMode = .auto
+	/// AI 构图会话代数：每次 start/stop 递增，用于丢弃跨会话的过期异步回调
+	/// （比如云端方案请求还没返回，用户就已经停止或重新开始了新一轮分析）
+	private var aiSessionGeneration = 0
+	/// 本会话的场景描述（来自 DeepSeek Vision，方案卡片页展示备用）
+	/// AdaCrop 参谋：方案生成时一次性预测最佳构图区（Vision 档位不启用）
+	private lazy var adaCropPlanAdvisor: AdaCropPlanAdvisor? = {
+		switch detectionMode {
+		case .fast: return AdaCropPlanAdvisor(mode: .fast)
+		case .pro: return AdaCropPlanAdvisor(mode: .pro)
+		case .vision: return nil
+		}
+	}()
+	private var adaCropRunning = false
+	/// 本会话的 AdaCrop 裁切区建议（显著性方案首帧校准用）
+	private var sessionCropHint: CGRect?
+	private var selectedPlan: CompositionPlan?
+	/// 方案分析开始时间（积累 ~0.9s 场景/主体证据后出方案）
+	private var planAnalysisStartedAt: Date?
+	private var planGenerationDone = false
+
+	// MARK: - 显著性跟踪（非人物方案）
+	private var saliencyCenter: CGPoint?
+	private var saliencySize: CGSize?
+	private var saliencySmoother = UniformPointSmoother(response: 0.4)
+	/// 显著区域从何时开始丢失（冻结旧位置超过 0.7s 即停止方向指挥）
+	private var saliencyLostSince: Date?
+	private var lastRawSaliencyCenter: CGPoint?
+	private var saliencyRejectCount = 0
+	/// 自动拍摄倒计时（remain/total 秒）；nil = 不在倒计时
+	@Published private(set) var autoCaptureCountdown: (remain: Double, total: Double)?
+	/// 场景推荐焦段（变焦盘上高亮提示），nil = 无推荐
+	@Published private(set) var sceneRecommendedFactor: CGFloat?
+
+	/// 会话是否激活（帧分析的总开关）
+	private var isCoachActive = false
+	/// 当前稳定场景
+	private var currentScene: SceneClassifier.SceneKind?
+
+	// MARK: - 目标锁定（治"左右乱指"）
+	// 旧逻辑每帧取"最近三分线"作目标：主体在画面中央时到左右三分线等距，
+	// 检测抖动会让目标左右翻转，chip 就永远在"向左/向右"之间横跳。
+	// 现在主体首次稳定出现时锁定目标，整个会话不变；
+	// 主体丢失超 1.5s 才解锁，重新出现时按朝向重新选择。
+	/// 锁定的目标点（归一化图像坐标，y 向上）
+	private var lockedTargetPoint: CGPoint?
+	/// 主体从画面消失的时刻（用于解锁目标）
+	private var subjectLostSince: Date?
 
 	// MARK: - Published State
-	
-	@Published private(set) var cropRectInView: CGRect?
-	@Published private(set) var initialCropRectInView: CGRect?
+
 	@Published private(set) var compositionRectInView: CGRect = .zero
-	@Published private(set) var isAligned: Bool = false
-	@Published private(set) var debugMessage: String = "等待相机启动..."
-	@Published private(set) var pipelineStage: PipelineStage = .idle
-	@Published private(set) var distanceToCenter: CGFloat?
-	@Published private(set) var detectionReady: Bool = false
 	@Published private(set) var motionIsStable: Bool = false
 	@Published private(set) var zoomState: CameraManager.ZoomState
 	@Published private(set) var zoomPresets: [CameraManager.ZoomPreset]
 	@Published private(set) var zoomRange: ClosedRange<CGFloat>
+	/// 顶部瞬态提示（如"照片已保存"）
 	@Published private(set) var userGuidanceText: String = ""
 	@Published var isAutoCaptureEnabled: Bool = true
 	@Published var captureDelay: Double = 1.0
 	@Published var isSwitchingCamera: Bool = false
-	@Published var isCompositionPipelineEnabled: Bool = false
-	
-	// MARK: - 相机能力与环境（Phase 0）
-	
+	/// 手动自拍倒计时时长（秒），0 = 关闭。选中后持续生效直到用户关闭，
+	/// 与原生相机 App 的定时器行为一致
+	@Published private(set) var selfTimerSeconds: Double = 0
+
+	// MARK: - 相机能力与环境
+
 	/// 当前设备的相机能力（启动时读取，切换摄像头时更新）
 	@Published private(set) var cameraCapability: CameraCapability = .empty
-	
 	/// 当前相机环境状态（实时参数）
 	@Published private(set) var cameraEnvironment: CameraEnvironment = .empty
-	
 	/// 当前摄影策略（AI + 用户共同决定）
 	@Published var photographyStrategy: PhotographyStrategy = .default
-	
-	// MARK: - AI 摄影建议
-	
-	@Published private(set) var photographyAnalysis: PhotographyAnalysisResult?
-	@Published private(set) var isPhotographyAnalyzing: Bool = false
-	/// 是否在拍摄页显示 AI 建议（全局设置）。
-	/// 开关在「设置 → AI 助手」里（AppStorage key: aiAdviceEnabled），
-	/// 这里按 VM 创建时读取一次——CaptureView 每次全屏弹出都会新建 VM，
-	/// 设置页的改动自然带到下一次拍摄会话。
-	@Published private(set) var isPhotographyAdviceEnabled: Bool =
-		UserDefaults.standard.bool(forKey: "aiAdviceEnabled")
-	
-	// MARK: - 构图引导（AI 目标 + 实时导航）
-	
-	/// 当前构图状态（每帧更新）
-	@Published private(set) var currentComposition: CurrentComposition?
-	
-	/// 目标构图状态（AI 分析后生成，固定不变）
-	@Published private(set) var compositionTarget: CompositionTarget?
-	
-	/// 实时引导结果（方向、进度、是否达标）
-	@Published private(set) var guidanceResult: GuidanceResult?
-	
-	/// 引导引擎
-	private let guidanceEngine = CompositionGuidanceEngine()
-	
-	/// 引导模式
-	enum GuidanceMode {
-		case none               // 没有引导
-		case cropAutoCapture    // 原有的裁切自动拍照
-		case aiTarget           // AI 推荐目标引导
-	}
-	
-	/// 当前引导模式
-	private var guidanceMode: GuidanceMode = .none
-	
+
+	// MARK: - AI 构图按钮开关
+
+	/// 拍摄页是否显示 AI 构图入口（设置页控制，无历史设置时默认开）
+	@Published private(set) var isAICompositionEnabled: Bool = {
+		let defaults = UserDefaults.standard
+		return defaults.object(forKey: "aiAdviceEnabled") as? Bool ?? true
+	}()
+
 	var onCaptureTriggered: (() -> Void)?
-	
+
 	// MARK: - Computed Properties
-	
-	var baseBoxCenterInView: CGPoint? { boxCenterManager.baseCenterInView }
-	var boxCenterInView: CGPoint? { boxCenterManager.currentCenterInView }
+
 	var isFrontCamera: Bool { camera.currentPosition == .front }
-	
-	var adjustedCropRectInView: CGRect? {
-		guard let initialRect = initialCropRectInView,
-			  let baseCenter = baseBoxCenterInView,
-			  let currentCenter = boxCenterInView else {
-			return nil
-		}
-		let dx = currentCenter.x - baseCenter.x
-		let dy = currentCenter.y - baseCenter.y
-		return initialRect.offsetBy(dx: dx, dy: dy)
-	}
-	
+
 	var zoomDisplayText: String {
 		let factor = zoomState.displayedFactor
 		if abs(Double(factor.rounded()) - Double(factor)) < 0.001 {
@@ -275,103 +172,112 @@ final class CaptureViewModel: ObservableObject {
 		}
 		return String(format: "%.2f×", factor)
 	}
-	
-	var focalLengthText: String {
-		"\(zoomState.focalLength)mm"
-	}
-	
+
 	var session: AVCaptureSession { camera.session }
-	
-	// MARK: - 显示控制计算属性
-	
-	/// 是否显示裁切引导 UI（旧的魔法棒模式）
-	/// 当 AI 引导激活时，隐藏旧的裁切引导，只显示统一的 AI 引导
-	var showCropGuide: Bool {
-		isCompositionPipelineEnabled && !isAIGuidanceActive
-	}
-	
-	/// AI 引导是否处于激活状态
-	var isAIGuidanceActive: Bool {
-		isPhotographyAdviceEnabled && guidanceResult != nil
-	}
-	
-	/// 供 UI 显示的引导结果（前置摄像头时水平方向翻转）
-	var displayGuidanceResult: GuidanceResult? {
-		guard var result = guidanceResult else { return nil }
+
+	/// 供 UI 显示的引导结果（前置摄像头画面是镜像的，水平方向需要翻转）
+	var displayGuidance: GuidanceResult? {
+		guard var result = coachGuidance else { return nil }
 		guard isFrontCamera else { return result }
-		
-		// 前置摄像头画面是镜像的，水平方向需要翻转
+
 		switch result.horizontalDirection {
 		case .moveLeft: result.horizontalDirection = .moveRight
 		case .moveRight: result.horizontalDirection = .moveLeft
 		default: break
 		}
-		
 		return result
 	}
-	
+
 	// MARK: - Private State
-	
+
 	private static let ciContext = CIContext()
-	private let alignmentTolerance: CGFloat = 15.0
-	private var detectionInProgress: Bool = false
 	private var cancellables: Set<AnyCancellable> = []
 	private var autoCaptureWorkItem: DispatchWorkItem?
+	/// 自动拍摄倒计时定时器（主线程 20Hz tick）
+	private var countdownTimer: DispatchSourceTimer?
+	private var countdownDeadline: Date?
+	/// 手动自拍倒计时定时器（与上面的 AI 自动拍摄共用 autoCaptureCountdown 这个
+	/// 发布属性驱动的倒计时环 UI，两者互斥，任何时刻只会有一个在跑）
+	private var selfTimerTimer: DispatchSourceTimer?
+	private var selfTimerDeadline: Date?
 
-	/// 单帧分析在途标志（本地防抖，不依赖 AI 请求时长，
-	/// 避免网络请求期间整条构图/引导流水线停摆）
+	// MARK: - 连拍分组（供拍后本地评分优选最佳一张）
+	/// 与 camera.capturePhoto() 调用一一对应的 FIFO 队列：每次快门前 push，
+	/// onPhotoDataReady 回调时 pop，用于把异步返回的照片数据正确关联到拍摄时刻的 burstID
+	/// （nil 代表普通单张，非连拍）。不用读实时 currentBurstID 是因为拍照处理是异步的，
+	/// 直接读存在竞态风险（松手时最后一张还没处理完，currentBurstID 已被清空）。
+	private var pendingBurstIDs: [UUID?] = []
+	/// 当前连拍会话的分组 ID，nil = 没在连拍
+	private var currentBurstID: UUID?
+
+	/// 拍后清晰度预审提示（单张拍摄判糊时弹出，带重拍入口）
+	struct BlurWarning: Identifiable, Equatable {
+		let id: UUID
+	}
+	@Published private(set) var blurWarning: BlurWarning?
+
+	/// 实时曝光风险提示（与 AI 构图会话无关，纯净相机下也会检测）
+	@Published private(set) var exposureWarning: ExposureWarning?
+	/// 仅在 videoOutputQueue 上访问（节流用）
+	private var lastExposureCheckTime: Date = .distantPast
+	private let exposureCheckInterval: TimeInterval = 1.0
+	/// 仅在主线程访问：一键修复/手动关闭后短暂抑制提示重新弹出
+	private var exposureSuppressedUntil: Date = .distantPast
+
+	// MARK: - 姿态水平仪（P1：CoreMotion 姿态精细化引导）
+	/// 设备侧倾角（度，正=向右倾）；nil = 尚无数据
+	@Published private(set) var cameraRollDegrees: Double?
+	private var lastRollUpdate = Date.distantPast
+
+	// MARK: - chip 防抖（B5）
+	/// 上次 chip 文案变更时间
+	private var lastSuggestionChange = Date.distantPast
+	/// 被防抖延迟的最新意图
+	private var pendingSuggestion: String?
+	private var suggestionDebounceWork: DispatchWorkItem?
+
+	/// 单帧分析在途标志（10fps 节流 + 防抖，会话期间持续运行）
 	private var isFrameAnalysisInFlight = false
+	private var lastAnalysisTime: Date?
+	private let analysisInterval: TimeInterval = 0.1
 
-	/// 检测失败后的冷却时间戳（避免逐帧重试推理）
-	private var lastDetectionFailureTime: Date?
-
-	/// 追踪点更新的节流时间戳（CoreMotion 60Hz → 主线程 ~30Hz）
+	/// 运动稳定性发布节流时间戳
 	private var lastMotionUIUpdate: Date = .distantPast
-	
-	// MARK: - 相机控制引擎（Phase 1）
-	
-	/// 相机控制引擎，负责将 PhotographyStrategy 转换成硬件参数
+
+	/// 快门时刻的构图评分快照（随照片入库）
+	private var pendingCompositionScore: Int?
+
+	/// 会话启动/镜头切换后的第一帧待分析标记（跳过节流窗口）
+	private var pendingFrameForAnalysis = false
+
+	/// 相机控制引擎：将 PhotographyStrategy 翻译成硬件参数
 	private let controlEngine = CameraControlEngine()
-	
+
 	// MARK: - Lifecycle
-	
+
 	private let detectionMode: DetectionMode
 
 	init(detectionMode: DetectionMode = .fast) {
 		self.detectionMode = detectionMode
-		switch detectionMode {
-		case .vision:
-			let visionDet = AestheticCropDetector()
-			detector = visionDet
-			visionDetector = visionDet
-			photographyAdvisor = PhotographyAdvisor(detector: visionDet)
-		case .fast, .pro:
-			detector = CoreMLCropDetector(mode: detectionMode)
-			visionDetector = nil
-			// CoreML 模式下也用 Vision 检测器做人物分析（因为 Composition 需要原始检测数据）
-			photographyAdvisor = PhotographyAdvisor()
-		}
+		// 构图分析始终用 Vision（人脸/人体检测），CoreML 裁切模型已随魔法棒下线
+		photographyAdvisor = PhotographyAdvisor()
+		photographyAdvisor.isCloudAdviceEnabled = false
 
 		zoomState = camera.zoomState
 		zoomPresets = camera.zoomPresets
 		zoomRange = camera.zoomRange
-		
-		// 初始化控制引擎
+
 		controlEngine.setCamera(camera)
-
-		boxCenterManager.setFrontCamera(camera.currentPosition == .front)
-
 		bindMotion()
 		bindCamera()
-		refreshUserGuidance()
 	}
-	
+
 	deinit {
 		autoCaptureWorkItem?.cancel()
 	}
-	
+
 	// MARK: - Public API
-	
+
 	func onAppear() {
 		camera.shouldBeRunning = true
 		camera.checkAndConfigure { [weak self] result in
@@ -379,384 +285,418 @@ final class CaptureViewModel: ObservableObject {
 			switch result {
 			case .success:
 				self.camera.startSession()
-				// 🔥 相机启动成功后，刷新引导文字
-				DispatchQueue.main.async {
-					self.refreshUserGuidance()
-				}
 			case .failure:
 				DispatchQueue.main.async {
-					self.setStage(.error, message: "相机启动失败")
+					self.userGuidanceText = "相机启动失败"
 				}
 			}
 		}
 		motion.start()
 		setupCallbacks()
 	}
-	
+
 	func onDisappear() {
-		autoCaptureWorkItem?.cancel()
+		cancelAutoCapture()
+		suggestionDebounceWork?.cancel()
+		blurWarning = nil
+		exposureWarning = nil
 		motion.stop()
 		camera.stopSession()
 	}
-	
+
 	func registerCompositionRect(_ rect: CGRect) {
 		guard compositionRectInView != rect else { return }
 		compositionRectInView = rect
-		boxCenterManager.updateCompositionRect(rect)
 	}
-	
+
 	func capturePhoto() {
-		// 快照此刻的构图评分随照片入库（首页"最近拍摄"展示评分用）。
-		// 在主线程先取好，避免照片回调队列跨线程读 @Published。
+		// 快照此刻的构图评分随照片入库（仅在 AI 会话中有值）
 		pendingCompositionScore = photographyAnalysis?.composition.score
+		pendingBurstIDs.append(nil)
 		camera.capturePhoto()
 	}
-	
+
+	/// 长按连拍中的每一张：仍走普通快门管线，只是多打上同一个 burstID，
+	/// 供拍后统一评分优选最佳一张（见 finishBurst）
+	func captureBurstPhoto() {
+		if currentBurstID == nil { currentBurstID = UUID() }
+		pendingCompositionScore = photographyAnalysis?.composition.score
+		pendingBurstIDs.append(currentBurstID)
+		camera.capturePhoto()
+	}
+
+	/// 长按连拍松手：结束当前分组，稍等所有照片落盘后统一选出最佳一张
+	func finishBurst() {
+		guard let burstID = currentBurstID else { return }
+		currentBurstID = nil
+		// 1.5s 宽限：给最后一张的 AVCapturePhoto 处理+保存+模糊检测留够时间，
+		// 避免 markBurstBest 运行时漏掉还未落盘的照片
+		DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+			PhotoStorageService.shared.markBurstBest(burstID)
+		}
+	}
+
+	/// 重拍判糊的那张：删除该记录并重新拍一张
+	func retakeBlurredPhoto() {
+		guard let warning = blurWarning else { return }
+		blurWarning = nil
+		PhotoStorageService.shared.deleteRecord(warning.id)
+		HapticManager.shared.light()
+		capturePhoto()
+	}
+
+	func dismissBlurWarning() {
+		blurWarning = nil
+	}
+
+	/// 一键曝光补偿：过曝压暗、欠曝提亮，直接复用已有的 setExposureBias
+	func applyQuickExposureFix() {
+		guard let warning = exposureWarning else { return }
+		let delta: Float = warning == .overexposed ? -1.0 : 1.0
+		let base = photographyStrategy.exposureControl == .aiAuto
+			? cameraEnvironment.currentExposureBias
+			: photographyStrategy.manualExposureBias
+		setExposureBias(base + delta)
+		exposureWarning = nil
+		// 给用户看效果的时间，短时间内不重复弹同一个方向的提示
+		exposureSuppressedUntil = Date().addingTimeInterval(4.0)
+	}
+
+	func dismissExposureWarning() {
+		exposureWarning = nil
+		// 用户主动关闭，冷却更久，避免立刻又弹回来
+		exposureSuppressedUntil = Date().addingTimeInterval(6.0)
+	}
+
+	/// 设置手动自拍倒计时时长（0 = 关闭），只是记录偏好，真正的倒计时在按下快门时才开始
+	func setSelfTimer(_ seconds: Double) {
+		selfTimerSeconds = seconds
+		HapticManager.shared.selection()
+	}
+
+	/// 开始手动自拍倒计时（工具栏选了时长后，按下快门触发），
+	/// 复用与 AI 自动拍摄同一套 autoCaptureCountdown 倒计时环 UI
+	func startSelfTimer(seconds: Double) {
+		cancelAutoCapture()
+		HapticManager.shared.light()
+
+		let total = max(1, seconds)
+		selfTimerDeadline = Date().addingTimeInterval(total)
+		autoCaptureCountdown = (remain: total, total: total)
+		let totalSteps = Int(ceil(total))
+		var lastStep = totalSteps
+
+		let timer = DispatchSource.makeTimerSource(queue: .main)
+		timer.schedule(deadline: .now(), repeating: 0.05)
+		timer.setEventHandler { [weak self] in
+			guard let self, let deadline = self.selfTimerDeadline else { return }
+			let remain = deadline.timeIntervalSinceNow
+			self.autoCaptureCountdown = (remain: max(0, remain), total: total)
+
+			let step = Int(ceil(max(0, remain)))
+			if step != lastStep {
+				lastStep = step
+				if step > 0 {
+					HapticManager.shared.countdown(step: totalSteps - step + 1, total: totalSteps)
+				}
+			}
+
+			guard remain <= 0 else { return }
+			self.autoCaptureCountdown = nil
+			self.selfTimerTimer?.cancel()
+			self.selfTimerTimer = nil
+			self.selfTimerDeadline = nil
+			self.onCaptureTriggered?()
+			DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+				self.capturePhoto()
+			}
+		}
+		selfTimerTimer = timer
+		timer.resume()
+	}
+
 	func selectZoomPreset(_ preset: CameraManager.ZoomPreset) {
 		camera.selectZoomPreset(preset)
 	}
-	
+
 	func updateZoomInteractively(to factor: CGFloat) {
 		camera.updateInteractiveZoom(to: factor)
 	}
-	
+
 	func finalizeZoomInteractively(at factor: CGFloat, smooth: Bool) {
 		camera.finalizeInteractiveZoom(at: factor, smooth: smooth)
 	}
-	
-	// MARK: - 曝光控制（Phase 1）
-	
-	/// 调整曝光偏差（EV）
-	///
-	/// - Parameter bias: EV 值，通常范围 -2...+2
-	///
-	/// 调用后会自动将曝光模式切换为 manual
+
+	// MARK: - AI 构图会话
+
+	/// 点按 AI 按钮：开/关构图会话（Doka 式一次触发）
+	func toggleAIComposition() {
+		if isCoachActive {
+			stopAIComposition()
+		} else {
+			startAIComposition()
+		}
+	}
+
+	func startAIComposition() {
+		HapticManager.shared.light()
+		aiSessionGeneration += 1
+		sceneClassifier.reset()
+		currentScene = nil
+		lockedTargetPoint = nil
+		subjectLostSince = nil
+		compositionPlans = []
+		selectedPlan = nil
+		selectedPlanIndex = nil
+		planGenerationDone = false
+		planAnalysisStartedAt = nil
+		saliencyCenter = nil
+		saliencySize = nil
+		saliencySmoother.reset()
+		sessionCropHint = nil
+		saliencyLostSince = nil
+		lastRawSaliencyCenter = nil
+		saliencyRejectCount = 0
+		coachSceneLabel = nil
+		coachGuidance = nil
+		compositionTarget = nil
+		currentComposition = nil
+		photographyAnalysis = nil
+		coachSuggestion = "AI 摄影师正在分析场景…"
+		lastSuggestionChange = Date()
+		pendingSuggestion = nil
+		suggestionDebounceWork?.cancel()
+		coachPhase = .analyzing
+		isCoachActive = true
+		sceneRecommendedFactor = nil
+		activeAnalysisMode = AIConfigurationStore.shared.compositionAnalysisMode
+
+		// MVP Final Plan：DeepSeek Vision 负责思考，失败回退本地启发式。
+		// auto 模式下本地管线（场景分类 + 人物检测 + AdaCrop）与云端请求并行启动，
+		// 本地管线依旧走下面统一的 pendingFrameForAnalysis/coachPhase 触发；
+		// 谁先出方案谁先展示，云端来迟了只在用户还没选定方案时无感升级
+		// （见 analyzeFrameNow 的门槛判断与 deliverCloudPlans 的兜底逻辑）。
+		switch activeAnalysisMode {
+		case .localOnly:
+			// 仅本地：即使配置了云端 Key 也不发起网络请求，用于对比测试本地路径体验
+			startLocalPlanFallback()
+		case .auto, .cloudOnly:
+			if AIConfigurationStore.shared.isCloudConfigured {
+				cloudPlanInFlight = true
+				cloudAttempt = 0
+				captureFrameForVision { [weak self] data in
+					guard let self else { return }
+					guard let data else {
+						self.startLocalPlanFallback()
+						return
+					}
+					self.cloudFrameData = data
+					self.requestCloudPlans(attempt: 1)
+				}
+			} else {
+				startLocalPlanFallback()
+			}
+		}
+		// 标记待分析帧：下一帧到达立即分析，不等节流窗口
+		pendingFrameForAnalysis = true
+	}
+
+	func stopAIComposition() {
+		HapticManager.shared.light()
+		aiSessionGeneration += 1
+		isCoachActive = false
+		lockedTargetPoint = nil
+		subjectLostSince = nil
+		compositionPlans = []
+		selectedPlan = nil
+		selectedPlanIndex = nil
+		planGenerationDone = false
+		planAnalysisStartedAt = nil
+		saliencyCenter = nil
+		saliencySize = nil
+		saliencyLostSince = nil
+		lastRawSaliencyCenter = nil
+		coachPhase = .idle
+		coachGuidance = nil
+		sceneRecommendedFactor = nil
+		cancelAutoCapture()
+	}
+
+	// MARK: - 曝光控制
+
+	/// 调整曝光偏差（EV），自动切换到 manual
 	func setExposureBias(_ bias: Float) {
 		photographyStrategy.exposureControl = .manual
 		photographyStrategy.manualExposureBias = bias
 	}
-	
+
 	/// 切换曝光控制模式
 	func setExposureControlMode(_ mode: ControlMode) {
 		let previousMode = photographyStrategy.exposureControl
 		photographyStrategy.exposureControl = mode
 
-		// 如果切回 aiAuto，重置手动 EV
 		if mode == .aiAuto {
 			photographyStrategy.manualExposureBias = 0
 			photographyStrategy.brightnessPreference = .auto
 		}
 
-		// 如果切到 locked，锁定当前值
 		if mode == .locked {
-			// 当前 EV 值就是锁定值
 			photographyStrategy.manualExposureBias = cameraEnvironment.currentExposureBias
 		}
 
-		// 从自动切到手动时，用当前真实 EV 作为起点（与对焦/白平衡语义一致），
-		// 否则滑杆会从默认 0 起跳，画面亮度突变
+		// 从自动切到手动时，用当前真实 EV 作为起点（与对焦/白平衡语义一致）
 		if mode == .manual, previousMode == .aiAuto {
 			photographyStrategy.manualExposureBias = cameraEnvironment.currentExposureBias
 		}
 	}
-	
-	/// 设置 AI 亮度偏好
-	///
-	/// 仅在 exposureControl == .aiAuto 时生效
+
+	/// 设置 AI 亮度偏好（仅 aiAuto 时生效）
 	func setBrightnessPreference(_ preference: BrightnessPreference) {
 		photographyStrategy.brightnessPreference = preference
 	}
-	
-	/// 重置曝光为全自动
-	func resetExposureToAuto() {
-		photographyStrategy.exposureControl = .aiAuto
-		photographyStrategy.manualExposureBias = 0
-		photographyStrategy.brightnessPreference = .auto
-		camera.resetExposureToAuto()
-	}
-	
-	// MARK: - 对焦控制（Phase 2）
-	
-	/// 设置手动对焦位置
-	///
-	/// - Parameter position: 0.0...1.0（最近...无穷远）
-	///
-	/// 调用后自动切换到 manual 模式
+
+	// MARK: - 对焦控制
+
+	/// 设置手动对焦位置（0=最近，1=无穷远），自动切换到 manual
 	func setManualFocusPosition(_ position: Float) {
 		photographyStrategy.focusControl = .manual
 		photographyStrategy.manualFocusPosition = position
 	}
-	
+
 	/// 切换对焦控制模式
 	func setFocusControlMode(_ mode: ControlMode) {
 		let previousMode = photographyStrategy.focusControl
 		photographyStrategy.focusControl = mode
-		
+
 		switch mode {
 		case .aiAuto:
-			// 切回自动对焦，重置手动位置
 			photographyStrategy.manualFocusPosition = nil
 			photographyStrategy.focusPreference = .auto
-			
+
 		case .locked:
-			// 锁定当前对焦位置
 			photographyStrategy.manualFocusPosition = cameraEnvironment.focusLensPosition
 			camera.lockFocus()
-			
+
 		case .manual:
-			// 如果之前是自动，用当前位置作为初始值
 			if previousMode == .aiAuto {
 				photographyStrategy.manualFocusPosition = cameraEnvironment.focusLensPosition
 			}
 		}
 	}
-	
-	/// 设置 AI 对焦偏好
-	///
-	/// 仅在 focusControl == .aiAuto 时生效
+
+	/// 设置 AI 对焦偏好（仅 aiAuto 时生效）
 	func setFocusPreference(_ preference: FocusPreference) {
 		photographyStrategy.focusPreference = preference
 	}
-	
-	/// 设置对焦点（画面坐标）
-	///
-	/// - Parameter point: 视图坐标中的对焦点
-	///
-	/// 会自动切换到 auto 模式并触发对焦
-	func setFocusPointOfInterest(_ point: CGPoint, in viewSize: CGSize) {
-		// 将视图坐标转换为 0...1 范围
-		let normalizedPoint = CGPoint(
-			x: point.x / viewSize.width,
-			y: point.y / viewSize.height
-		)
-		photographyStrategy.focusControl = .aiAuto
-		photographyStrategy.focusPointOfInterest = normalizedPoint
-		photographyStrategy.focusPreference = .subjectLock
 
-		// 直接调用相机设置对焦点（更直接）
-		camera.setFocusPointOfInterest(normalizedPoint)
-	}
-
-	/// 点按对焦/曝光（设备归一化坐标，由预览层 captureDevicePointConverted 转换而来，
-	/// 前置摄像头的镜像已在调用方处理）
+	/// 点按对焦/曝光（设备归一化坐标，预览层 captureDevicePointConverted 已处理镜像）
 	func focusAtDevicePoint(_ point: CGPoint) {
 		photographyStrategy.focusControl = .aiAuto
 		photographyStrategy.focusPointOfInterest = point
 		photographyStrategy.focusPreference = .subjectLock
 		camera.setFocusPointOfInterest(point)
 	}
-	
-	/// 重置对焦为全自动
-	func resetFocusToAuto() {
-		photographyStrategy.focusControl = .aiAuto
-		photographyStrategy.focusPreference = .auto
-		photographyStrategy.manualFocusPosition = nil
-		photographyStrategy.focusPointOfInterest = nil
-		camera.resetFocusToAuto()
-	}
-	
-	// MARK: - 白平衡控制（Phase 3）
-	
-	/// 设置手动白平衡色温
-	///
-	/// - Parameter temperature: 色温（开尔文），通常 2000K...10000K
-	///
-	/// 调用后自动切换到 manual 模式
+
+	// MARK: - 白平衡控制
+
+	/// 设置手动白平衡色温（开尔文），自动切换到 manual
 	func setWhiteBalanceTemperature(_ temperature: Float) {
 		photographyStrategy.whiteBalanceControl = .manual
 		photographyStrategy.manualWhiteBalanceTemp = temperature
 	}
-	
+
 	/// 切换白平衡控制模式
 	func setWhiteBalanceControlMode(_ mode: ControlMode) {
 		let previousMode = photographyStrategy.whiteBalanceControl
 		photographyStrategy.whiteBalanceControl = mode
-		
+
 		switch mode {
 		case .aiAuto:
-			// 切回自动白平衡，重置手动值
 			photographyStrategy.manualWhiteBalanceTemp = nil
 			photographyStrategy.whiteBalancePreference = .auto
 			camera.resetWhiteBalanceToAuto()
-			
+
 		case .locked:
-			// 锁定当前白平衡
 			photographyStrategy.manualWhiteBalanceTemp = cameraEnvironment.estimatedColorTemperature
 			camera.lockWhiteBalance()
-			
+
 		case .manual:
-			// 如果之前是自动，用当前色温作为初始值
 			if previousMode == .aiAuto {
 				photographyStrategy.manualWhiteBalanceTemp = cameraEnvironment.estimatedColorTemperature
 			}
 		}
 	}
-	
-	/// 设置 AI 白平衡偏好
-	///
-	/// 仅在 whiteBalanceControl == .aiAuto 时生效
+
+	/// 设置 AI 白平衡偏好（仅 aiAuto 时生效）
 	func setWhiteBalancePreference(_ preference: WhiteBalancePreference) {
 		photographyStrategy.whiteBalancePreference = preference
 	}
-	
-	/// 重置白平衡为全自动
-	func resetWhiteBalanceToAuto() {
-		photographyStrategy.whiteBalanceControl = .aiAuto
-		photographyStrategy.whiteBalancePreference = .auto
-		photographyStrategy.manualWhiteBalanceTemp = nil
-		camera.resetWhiteBalanceToAuto()
-	}
-	
-	// MARK: - 镜头/变焦控制（Phase 4）
-	
-	/// 设置镜头偏好
-	///
-	/// 仅在 lensControl == .aiAuto 时由 AI 调用
-	func setLensPreference(_ preference: LensPreference) {
-		photographyStrategy.lensPreference = preference
-	}
-	
-	/// 切换镜头控制模式
-	func setLensControlMode(_ mode: ControlMode) {
-		let previousMode = photographyStrategy.lensControl
-		photographyStrategy.lensControl = mode
-		
-		switch mode {
-		case .aiAuto:
-			// 切回 AI 自动
-			photographyStrategy.manualZoomFactor = nil
-			photographyStrategy.lensPreference = .auto
-			
-		case .locked:
-			// 锁定当前变焦倍率
-			photographyStrategy.manualZoomFactor = zoomState.currentFactor
-			
-		case .manual:
-			// 手动模式，用当前倍率作为初始值
-			if previousMode == .aiAuto {
-				photographyStrategy.manualZoomFactor = zoomState.currentFactor
-			}
-		}
-	}
-	
-	/// 设置手动变焦倍率
-	func setManualZoomFactor(_ factor: CGFloat) {
-		photographyStrategy.lensControl = .manual
-		photographyStrategy.manualZoomFactor = factor
-	}
-	
+
+	// MARK: - 镜头/变焦控制
+
 	func toggleCameraPosition() {
 		isSwitchingCamera = true
-		resetDetectionState()
-		
-		// 🔥 在切换前计算下一个位置（因为 toggleCameraPosition 是异步的）
+
 		let nextPosition: AVCaptureDevice.Position = camera.currentPosition == .back ? .front : .back
-		
 		camera.toggleCameraPosition()
-		
-		// 更新前置摄像头状态到 BoxCenterManager（使用计算出的下一个位置）
-		boxCenterManager.setFrontCamera(nextPosition == .front)
-		
-		// 🔥 如果流水线开启，显示等待稳定；否则使用统一刷新机制
-		if isCompositionPipelineEnabled {
-			setStage(.waitingForStability, message: "切换镜头，等待稳定")
-		} else {
-			refreshUserGuidance()
+
+		// 会话进行中：镜头换了场景就变了，重置场景投票重新分析
+		if isCoachActive {
+			sceneClassifier.reset()
+			currentScene = nil
+			lockedTargetPoint = nil
+			subjectLostSince = nil
+			coachSceneLabel = nil
+			compositionTarget = nil
+			currentComposition = nil
+			coachGuidance = nil
+			compositionPlans = []
+			selectedPlan = nil
+			selectedPlanIndex = nil
+			planGenerationDone = false
+			planAnalysisStartedAt = nil
+			saliencyCenter = nil
+			saliencySize = nil
+			saliencyLostSince = nil
+			lastRawSaliencyCenter = nil
+			coachPhase = .analyzing
+			sessionCropHint = nil
+			coachSuggestion = "正在分析场景"
+			pendingFrameForAnalysis = true
 		}
-		
-		// 切换动画完成后重置标志
+
+		cancelAutoCapture()
+
 		DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
 			self.isSwitchingCamera = false
 		}
 	}
-	
-	func openSystemPhotoLibrary() {
-		#if canImport(UIKit)
-		if let url = URL(string: "photos-redirect://") {
-			DispatchQueue.main.async {
-				UIApplication.shared.open(url, options: [:], completionHandler: nil)
-			}
-		}
-		#endif
-	}
-	
-	func resetDetectionState() {
-		detectionReady = false
-		isAligned = false
-		cropRectInView = nil
-		initialCropRectInView = nil
-		boxCenterManager.reset()
-		autoCaptureWorkItem?.cancel()
-		motion.resetReferenceAttitude()
-		detectionInProgress = false
-		// 🔥 统一刷新引导文本
-		refreshUserGuidance()
-	}
-	
+
+	// MARK: - 拍摄设置
+
 	func toggleAutoCapture() {
 		isAutoCaptureEnabled.toggle()
+		if !isAutoCaptureEnabled {
+			cancelAutoCapture()
+		}
 	}
-	
+
 	func setCaptureDelay(_ delay: Double) {
 		captureDelay = delay
 	}
-	
-	func toggleCompositionPipeline() {
-		isCompositionPipelineEnabled.toggle()
-		
-		if isCompositionPipelineEnabled {
-			// 开启时显示提示
-			HapticManager.shared.success()
-		} else {
-			// 关闭时刷新检测状态
-			HapticManager.shared.light()
-			resetDetectionState()
-		}
-		// 🔥 统一刷新引导文本
-		refreshUserGuidance()
-	}
-	
-	// MARK: - User Guidance
-	
-	/// 统一的用户引导文本刷新机制
-	/// 根据当前状态决定显示的引导文字
-	private func refreshUserGuidance() {
-		if isCompositionPipelineEnabled {
-			// 流水线开启时，根据当前阶段显示引导
-			if detectionReady {
-				userGuidanceText = pipelineStage.guidanceText
-			} else {
-				userGuidanceText = "构图流水线已开启"
-			}
-		} else {
-			// 流水线关闭时，显示开启提示
-			userGuidanceText = "点击魔术棒开启智能构图"
-		}
-	}
-	
+
 	// MARK: - Bindings
-	
+
 	private func bindMotion() {
 		motion.$deviceMotion
 			.receive(on: DispatchQueue.main)
 			.sink { [weak self] motion in
-				guard let self else { return }
-				// 节流到 ~30Hz：追踪点足够顺滑，主线程负载减半
+				guard let self, let motion else { return }
 				let now = Date()
-				guard now.timeIntervalSince(self.lastMotionUIUpdate) >= 0.033 else { return }
-				self.lastMotionUIUpdate = now
-
-				self.boxCenterManager.updateCenter(with: motion)
-
-				// 没有锁定的检测目标时，对齐/裁切框计算都是无效功
-				guard self.detectionReady else { return }
-
-				self.distanceToCenter = self.boxCenterManager.distanceToCenter()
-
-				if let adjusted = self.adjustedCropRectInView {
-					self.cropRectInView = adjusted
-				}
-				self.checkAlignmentByDistance()
+				guard now.timeIntervalSince(self.lastRollUpdate) >= 0.15 else { return }
+				self.lastRollUpdate = now
+				// 竖屏握持时 roll 即画面侧倾角（弧度→度）
+				self.cameraRollDegrees = motion.attitude.roll * 180 / .pi
 			}
 			.store(in: &cancellables)
 
@@ -764,278 +704,893 @@ final class CaptureViewModel: ObservableObject {
 			.receive(on: DispatchQueue.main)
 			.sink { [weak self] stable in
 				guard let self else { return }
+				let now = Date()
+				guard now.timeIntervalSince(self.lastMotionUIUpdate) >= 0.2 else { return }
+				self.lastMotionUIUpdate = now
 				self.motionIsStable = stable
-			}
-			.store(in: &cancellables)
 
-		motion.$largeMotionDetected
-			.receive(on: DispatchQueue.main)
-			.sink { [weak self] detected in
-				guard let self, detected, self.detectionReady else { return }
-				// 检测到大幅度运动时自动重置状态
-				HapticManager.shared.warning()
-				self.resetDetectionState()
+				// 倒计时中手抖了：取消拍摄并明确告知，比拍糊再删好
+				if !stable, self.autoCaptureCountdown != nil {
+					self.cancelAutoCapture()
+					if self.coachPhase == .achieved { self.coachPhase = .guiding }
+					self.publishSuggestion("手抖了，稳住重新构图")
+				}
 			}
 			.store(in: &cancellables)
 	}
-	
+
 	private func bindCamera() {
 		camera.$lastPhotoSaved
 			.receive(on: DispatchQueue.main)
 			.sink { [weak self] saved in
 				guard let self, saved else { return }
 				HapticManager.shared.success()
-				self.setStage(.savingPhoto, message: "照片已保存")
-				// 短暂展示保存结果后回到就绪态。
-				// 注意：不能关闭构图流水线——用户连续拍摄时每次都要重新开魔法棒是重大体验 bug
-				DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-					if self.pipelineStage == .savingPhoto {
-						self.resetDetectionState()
-						self.refreshUserGuidance()
-					}
+				self.userGuidanceText = "照片已保存"
+				DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) { [weak self] in
+					self?.userGuidanceText = ""
 				}
 			}
 			.store(in: &cancellables)
-		
+
 		camera.$zoomState
 			.receive(on: DispatchQueue.main)
 			.sink { [weak self] state in
-				guard let self else { return }
-				self.zoomState = state
-				self.boxCenterManager.updateZoomFactor(state.currentFactor)
+				self?.zoomState = state
 			}
 			.store(in: &cancellables)
-		
+
 		camera.$zoomPresets
 			.receive(on: DispatchQueue.main)
 			.sink { [weak self] presets in
 				self?.zoomPresets = presets
 			}
 			.store(in: &cancellables)
-		
+
 		camera.$zoomRange
 			.receive(on: DispatchQueue.main)
 			.sink { [weak self] range in
 				self?.zoomRange = range
 			}
 			.store(in: &cancellables)
-		
-		// MARK: - 相机能力与环境订阅（Phase 0）
-		
+
 		camera.$cameraCapability
 			.receive(on: DispatchQueue.main)
 			.sink { [weak self] capability in
-				guard let self = self else { return }
+				guard let self else { return }
 				self.cameraCapability = capability
 				self.controlEngine.updateCapability(capability)
 			}
 			.store(in: &cancellables)
-		
+
 		camera.$cameraEnvironment
 			.receive(on: DispatchQueue.main)
 			.sink { [weak self] environment in
-				guard let self = self else { return }
+				guard let self else { return }
 				self.cameraEnvironment = environment
 				self.controlEngine.updateEnvironment(environment)
 			}
 			.store(in: &cancellables)
-		
-		// MARK: - 摄影策略订阅（Phase 1）
-		// 策略变化时自动应用到相机
-		
+
+		// 策略变化 → 差异化下发硬件
 		$photographyStrategy
-			.dropFirst()  // 跳过初始值
+			.dropFirst()
 			.debounce(for: .milliseconds(100), scheduler: DispatchQueue.main)
 			.sink { [weak self] strategy in
 				self?.controlEngine.applyStrategy(strategy)
 			}
 			.store(in: &cancellables)
 	}
-	
+
 	// MARK: - Camera Processing
-	
+
 	private func setupCallbacks() {
 		camera.onSampleBuffer = { [weak self] sample in
 			guard let self else { return }
 			self.handleSampleBuffer(sample)
 		}
 		camera.onPhotoDataReady = { [weak self] data in
-			guard let self else { return }
-			PhotoStorageService.shared.savePhoto(
-				data: data,
-				detectionMethod: self.detectionMode.displayName,
-				compositionScore: self.pendingCompositionScore
-			)
-		}
-	}
-
-	/// 按下快门那一刻的构图评分（capturePhoto 里在主线程快照）
-	private var pendingCompositionScore: Int?
-	
-	private func handleSampleBuffer(_ sample: CMSampleBuffer) {
-		guard let rawPixel = CMSampleBufferGetImageBuffer(sample) else { return }
-		let orientation = pixelOrientation(for: rawPixel)
-
-		// AI 摄影构图分析（节流控制，内部 10fps 节流，生成目标构图与策略）
-		analyzePhotographyIfNeeded(pixel: rawPixel, orientation: orientation)
-
-		// 实时引导计算需要跟手，但仅在 AI 引导激活时才有意义，
-		// 避免空闲状态下每帧向主线程派发
-		if guidanceMode == .aiTarget {
+			// AVCapturePhotoOutput 的回调线程不保证是主线程，而 pendingBurstIDs/
+			// pendingCompositionScore 在 capturePhoto()/captureBurstPhoto() 里是在主线程
+			// 写入的，统一换到主线程才能避免跨线程读写同一个数组/标量。
 			DispatchQueue.main.async {
-				self.updateGuidanceResult()
-			}
-		}
-
-		// 只有在流水线开启时才执行检测流程
-		guard isCompositionPipelineEnabled else {
-			return
-		}
-
-		guard motion.isStable else {
-			if !detectionReady {
-				DispatchQueue.main.async {
-					self.setStage(.waitingForStability, message: "等待设备稳定...")
+				guard let self else { return }
+				let burstID = self.pendingBurstIDs.isEmpty ? nil : self.pendingBurstIDs.removeFirst()
+				let score = self.pendingCompositionScore
+				self.pendingCompositionScore = nil
+				PhotoStorageService.shared.savePhoto(
+					data: data,
+					detectionMethod: self.detectionMode.displayName,
+					compositionScore: score,
+					burstID: burstID
+				) { [weak self] id in
+					self?.runPostCaptureAnalysis(id: id, data: data, burstID: burstID)
 				}
 			}
-			return
-		}
-
-		// 上次识别失败后的冷却期，避免逐帧重试推理
-		if let failure = lastDetectionFailureTime,
-		   Date().timeIntervalSince(failure) < 1.5 {
-			return
-		}
-
-		guard let compositionPixel = makeCompositionPixelBuffer(from: rawPixel, orientation: orientation) else {
-			DispatchQueue.main.async {
-				self.setStage(.error, message: "无法处理画面")
-			}
-			return
-		}
-
-		if !detectionReady && !detectionInProgress {
-			DispatchQueue.main.async {
-				self.setStage(.detectingRegion, message: "设备已稳定，开始识别目标区域...")
-				self.detectionInProgress = true
-			}
-			detectCropRegion(using: compositionPixel, orientation: orientation)
 		}
 	}
-	
-	// MARK: - AI 摄影分析
-	
-	/// 节流控制：上次分析时间
-	private var lastPhotographyAnalysisTime: Date?
-	
-	/// AI 分析间隔（秒），避免太频繁
-	/// Vision 检测很快，可以高频跑保证引导流畅
-	/// AI 网络请求较慢，在 PhotographyAdvisor 内部单独节流
-	private let photographyAnalysisInterval: TimeInterval = 0.1  // 10fps，足够流畅
-	
-	/// 判断是否需要执行摄影分析，并在需要时执行
-	private func analyzePhotographyIfNeeded(
-		pixel: CVPixelBuffer,
-		orientation: CGImagePropertyOrientation
-	) {
-		guard isPhotographyAdviceEnabled else { return }
 
-		// 节流控制
+	/// 拍摄落盘后跑一次本地清晰度检测（Laplacian 方差）。
+	/// 单张拍摄且判定为模糊时弹出重拍提示；连拍中的每一张只记录结果，
+	/// 交给 finishBurst() 结束后统一挑最佳，不逐张打扰用户。
+	private func runPostCaptureAnalysis(id: UUID, data: Data, burstID: UUID?) {
+		DispatchQueue.global(qos: .utility).async { [weak self] in
+			guard let blurResult = BlurDetector.evaluate(jpegData: data) else { return }
+			PhotoStorageService.shared.updateBlurResult(blurResult.isBlurry, for: id)
+
+			guard burstID == nil, blurResult.isBlurry else { return }
+			DispatchQueue.main.async {
+				guard let self else { return }
+				self.blurWarning = BlurWarning(id: id)
+				HapticManager.shared.warning()
+				DispatchQueue.main.asyncAfter(deadline: .now() + 4.0) { [weak self] in
+					if self?.blurWarning?.id == id { self?.blurWarning = nil }
+				}
+			}
+		}
+	}
+
+	/// 曝光风险检测（与 AI 会话无关，1Hz 节流，直接读 Y 平面内存，开销可忽略）。
+	/// 注意线程约定：本函数总是在 videoOutputQueue 上调用，
+	/// lastExposureCheckTime 只在这里读写，不能在其他地方访问；
+	/// exposureWarning/photographyStrategy/exposureSuppressedUntil 都是 @Published 或主线程状态，
+	/// 统一改到 DispatchQueue.main.async 里才读写，避免与主线程的一键修复/关闭操作产生跨线程竞态。
+	private func checkExposureIfNeeded(_ pixelBuffer: CVPixelBuffer) {
 		let now = Date()
-		if let last = lastPhotographyAnalysisTime,
-		   now.timeIntervalSince(last) < photographyAnalysisInterval {
+		guard now.timeIntervalSince(lastExposureCheckTime) >= exposureCheckInterval else { return }
+		lastExposureCheckTime = now
+
+		let result = ExposureAnalyzer.evaluate(pixelBuffer)
+		DispatchQueue.main.async { [weak self] in
+			guard let self else { return }
+			guard Date() >= self.exposureSuppressedUntil else { return }
+			// 手动/锁定曝光下用户已经自己在调，不打扰
+			guard self.photographyStrategy.exposureControl == .aiAuto else {
+				self.exposureWarning = nil
+				return
+			}
+			self.exposureWarning = result
+		}
+	}
+
+	/// 视觉连通性测试的一次性取帧回调
+	private var visionTestFrameHandler: ((Data?) -> Void)?
+
+	/// 捕获当前取景帧（预处理为 JPEG），供 AI 视觉测试发送
+	func captureFrameForVision(completion: @escaping (Data?) -> Void) {
+		visionTestFrameHandler = completion
+	}
+
+	private func handleSampleBuffer(_ sample: CMSampleBuffer) {
+		// 视觉测试按需取帧：不依赖 AI 会话状态，取完即交还缓冲
+		if let handler = visionTestFrameHandler {
+			visionTestFrameHandler = nil
+			if let pixel = CMSampleBufferGetImageBuffer(sample) {
+				handler(ImagePreparationService.prepareVisionPayload(
+					from: pixel,
+					orientation: pixelOrientation(for: pixel)
+				))
+			} else {
+				handler(nil)
+			}
+		}
+
+		// 曝光风险提示：不依赖 AI 构图会话，纯净相机下也能提示
+		if let pixelForExposure = CMSampleBufferGetImageBuffer(sample) {
+			checkExposureIfNeeded(pixelForExposure)
+		}
+
+		guard isCoachActive, coachPhase != .idle, coachPhase != .plans else { return }
+		guard let pixel = CMSampleBufferGetImageBuffer(sample) else { return }
+		let orientation = pixelOrientation(for: pixel)
+
+		// 会话启动/镜头切换/选中方案后的第一帧立即分析
+		if pendingFrameForAnalysis {
+			pendingFrameForAnalysis = false
+			if coachPhase == .analyzing {
+				planAnalysisStartedAt = Date()
+			}
+			analyzeFrameNow(pixel, orientation: orientation)
 			return
 		}
-		lastPhotographyAnalysisTime = now
 
-		// 防抖：上一帧分析尚未返回时跳过。
-		// 注意：这个标志只覆盖单帧分析本身，与 AI 网络请求无关，
-		// 否则网络慢时整条构图/引导流水线会跟着冻结
+		// 10fps 节流 + 单帧防抖
+		let now = Date()
+		if let last = lastAnalysisTime, now.timeIntervalSince(last) < analysisInterval { return }
+		lastAnalysisTime = now
 		guard !isFrameAnalysisInFlight else { return }
 		isFrameAnalysisInFlight = true
+		analyzeFrameNow(pixel, orientation: orientation)
+	}
 
-		DispatchQueue.main.async {
-			self.isPhotographyAnalyzing = true
+	// MARK: - 单帧分析
+
+	/// 最近一次构图分析结果（快门评分快照来源）
+	private(set) var photographyAnalysis: PhotographyAnalysisResult?
+
+	private var currentComposition: CurrentComposition?
+	private var compositionTarget: CompositionTarget?
+
+	private func analyzeFrameNow(_ pixel: CVPixelBuffer, orientation: CGImagePropertyOrientation) {
+		let zoom = zoomState.currentFactor
+		let focal = zoomState.focalLength
+
+		// 方案分析阶段：场景投票积累证据；证据就绪后让 AdaCrop 参谋一次再出方案
+		if coachPhase == .analyzing {
+			sceneClassifier.classify(pixel, orientation: orientation) { [weak self] decision in
+				guard let self, let decision else { return }
+				self.applyScene(decision)
+			}
+
+			let elapsed = planAnalysisStartedAt.map { Date().timeIntervalSince($0) } ?? 0
+			// cloudOnly 模式下保持旧行为：云端还在飞就不让本地出方案；
+			// auto/localOnly 下本地不等云端，证据就绪即出方案（本地优先 + 云端增强）
+			if !planGenerationDone, (activeAnalysisMode != .cloudOnly || !cloudPlanInFlight),
+			   photographyAnalysis != nil, elapsed >= 0.9, !adaCropRunning {
+				if let ada = adaCropPlanAdvisor {
+					adaCropRunning = true
+					ada.predictBestCrop(pixel, orientation: orientation) { [weak self] rect in
+						guard let self else { return }
+						self.adaCropRunning = false
+						self.sessionCropHint = rect
+						self.generatePlans()
+					}
+				} else {
+					generatePlans()
+				}
+				return
+			}
 		}
 
+		// 引导阶段 + 显著性方案：跑显著性跟踪（省掉人物检测）
+		if coachPhase == .guiding || coachPhase == .achieved,
+		   selectedPlan?.tracking == .saliency {
+			runSaliencyTracking(pixel, orientation: orientation)
+			return
+		}
+
+		// 分析阶段 / 人物跟踪方案：Vision 主体检测 + 构图评分
 		photographyAdvisor.analyzeFrame(
 			pixel,
 			orientation: orientation,
-			zoomFactor: zoomState.currentFactor,
-			focalLength: zoomState.focalLength
+			zoomFactor: zoom,
+			focalLength: focal
 		) { [weak self] result in
-			guard let self = self else { return }
+			guard let self else { return }
 			self.isFrameAnalysisInFlight = false
 			DispatchQueue.main.async {
-				self.photographyAnalysis = result
-				self.isPhotographyAnalyzing = false
-
-				// 更新目标构图
-				self.compositionTarget = result.target
-
-				// 更新当前构图状态
-				self.currentComposition = self.makeCurrentComposition(from: result.composition)
-
-				// 如果检测到了人，切换到 AI 引导模式，并计算引导结果
-				if result.composition.person.detected {
-					self.guidanceMode = .aiTarget
-					self.updateGuidanceResult()
-				} else {
-					self.guidanceMode = .none
-					self.guidanceResult = nil
-				}
-
-				// 自动应用 AI 相机策略建议
-				// 只改写处于 .aiAuto 模式的参数（用户锁定/手动的不覆盖）。
-				// 不在这里直接调 controlEngine——统一走 $photographyStrategy
-				// 的 debounce 订阅，避免同一策略被两条通道重复下发到硬件
-				self.applyAICameraStrategy(result.cameraStrategy)
+				self.ingestAnalysis(result)
 			}
 		}
 	}
 
-	// MARK: - AI 相机策略自动应用（Phase 4）
+	// MARK: - 显著性跟踪（非人物方案的"当前主体"来源）
 
-	/// 应用 AI 推荐的相机策略偏好
-	///
-	/// **核心规则**：只有当参数处于 `.aiAuto` 模式时才会应用 AI 建议。
-	/// 用户切换到 `.manual` 或 `.locked` 后，AI 不再干预该参数。
+	private func runSaliencyTracking(_ pixel: CVPixelBuffer, orientation: CGImagePropertyOrientation) {
+		defer { isFrameAnalysisInFlight = false }
+		let request = VNGenerateAttentionBasedSaliencyImageRequest()
+		let handler = VNImageRequestHandler(cvPixelBuffer: pixel, orientation: orientation, options: [:])
+		do {
+			try handler.perform([request])
+		} catch {
+			return
+		}
+		guard let observation = request.results?.first,
+		      let box = observation.salientObjects?.first?.boundingBox else {
+			// 无显著区域：记录丢失时刻（短暂丢失保留上次位置防闪断）
+			if saliencyLostSince == nil { saliencyLostSince = Date() }
+			DispatchQueue.main.async { self.ingestSaliencyPlanTick() }
+			return
+		}
+
+		let raw = CGPoint(x: box.midX, y: box.midY)
+		// 跳变拒绝：单帧位移超过 0.35 视为背景抢焦点的误检，本帧忽略；
+		// 连续 3 帧跳变则接受新位置（快速甩动相机的正常重新捕获）
+		if let last = lastRawSaliencyCenter,
+		   hypot(raw.x - last.x, raw.y - last.y) > 0.35,
+		   saliencyRejectCount < 3 {
+			saliencyRejectCount += 1
+			DispatchQueue.main.async { self.ingestSaliencyPlanTick() }
+			return
+		}
+		saliencyRejectCount = 0
+		lastRawSaliencyCenter = raw
+		saliencyLostSince = nil
+
+		// Vision 归一化坐标 y 向上，与构图引擎一致；EWMA 平滑防抖
+		let smoothed = saliencySmoother.filter(raw)
+		saliencyCenter = smoothed
+		saliencySize = CGSize(width: box.width, height: box.height)
+		DispatchQueue.main.async { self.ingestSaliencyPlanTick() }
+	}
+
+	/// 显著性方案的一次引导更新
+	private func ingestSaliencyPlanTick() {
+		guard let plan = selectedPlan,
+		      coachPhase == .guiding || coachPhase == .achieved else { return }
+		// 主体丢失超过 0.7s：冻结的旧位置会一直指挥移动（用户报告的
+		// "主体丢了还一直让我左移"就是它），此时停止方向指挥，
+		// 保留标记圈作为"转回来"的参照
+		if saliencyCenter == nil ||
+			(saliencyLostSince.map { Date().timeIntervalSince($0) > 0.7 } ?? false) {
+			coachGuidance = nil
+			publishSuggestion("主体出画面了，转回标记圈的位置")
+			return
+		}
+		guard let center = saliencyCenter else { return }
+		// 首次显著性定位时：用 AdaCrop 裁切区校准目标（模型认为的最佳落点）
+		if lockedTargetPoint == nil {
+			var target = CGPoint(x: plan.subjectTarget.x, y: 1 - plan.subjectTarget.y)
+			if plan.calibrateFromCrop, let crop = sessionCropHint,
+			   let mapped = PlanGeometry.mapThroughCrop(center, crop: crop) {
+				target = mapped
+			}
+			lockedTargetPoint = target
+			guidanceEngine.reset()
+		}
+		let size = saliencySize ?? CGSize(width: 0.3, height: 0.3)
+		let current = CurrentComposition(
+			subjectCenterX: center.x,
+			subjectCenterY: center.y,
+			subjectWidthRatio: size.width,
+			subjectHeightRatio: size.height,
+			faceCenterX: nil,
+			faceCenterY: nil,
+			headRoomRatio: 0,
+			minEdgeDistance: 0,
+			isSubjectComplete: true,
+			overallScore: photographyAnalysis?.composition.score ?? 0,
+			subjectPosition: photographyAnalysis?.composition.subjectPosition ?? .unknown
+		)
+		applyGuidance(current: current, target: planTarget(for: plan, currentHeight: size.height))
+	}
+
+	/// 场景结论 → 标签 + 参数预设（带滞回，只在场景变化时下发）
+	private func applyScene(_ decision: SceneClassifier.Decision) {
+		let scene = decision.kind
+		if scene == currentScene { return }
+
+		// generic 不覆盖已识别的具体场景（避免偶发无分类帧抖动）
+		if scene == .generic, currentScene != nil { return }
+
+		currentScene = scene
+		coachSceneLabel = scene.displayName.isEmpty ? nil : scene.displayName
+
+		// 场景宣告：具体场景（非通用）识别成功给一次选择反馈
+		if scene != .generic {
+			HapticManager.shared.selection()
+		}
+
+		// 场景 → 相机参数预设：只改写 aiAuto 状态的参数（用户手动/锁定的不覆盖）
+		let preset = scenePreset(for: scene)
+		applyAICameraStrategy(preset)
+		syncSceneRecommendedLens(preset)
+	}
+
+	/// 场景推荐镜头 → 变焦盘高亮提示（与当前倍率差距明显才提示）
+	private func syncSceneRecommendedLens(_ preset: CameraStrategySuggestion) {
+		var target: CameraManager.ZoomPreset?
+		switch preset.lensPreference {
+		case .ultraWide: target = zoomPresets.first { $0.lens == .ultraWide }
+		case .telephoto: target = zoomPresets.first { $0.lens == .telephoto }
+		default: target = nil
+		}
+		if let target, abs(target.zoomFactor - zoomState.currentFactor) > 0.3 {
+			sceneRecommendedFactor = target.zoomFactor
+		} else {
+			sceneRecommendedFactor = nil
+		}
+	}
+
+	/// 场景 → 参数预设（语义偏好，经三态控制过滤后生效）
+	private func scenePreset(for scene: SceneClassifier.SceneKind) -> CameraStrategySuggestion {
+		var s = CameraStrategySuggestion()
+		switch scene {
+		case .portrait:
+			s.focusPreference = .subjectLock
+			s.depthPreference = .shallow
+		case .food:
+			s.focusPreference = .macro
+			s.whiteBalancePreference = .natural
+		case .night:
+			s.brightnessPreference = .night
+			s.motionPriority = .lowNoise
+		case .landscape:
+			s.lensPreference = .ultraWide
+			s.depthPreference = .deep
+		case .street:
+			s.motionPriority = .freezeMotion
+		case .document:
+			s.brightnessPreference = .brighter
+		case .generic:
+			break
+		}
+		return s
+	}
+
+	/// 应用 AI/场景推荐的相机策略偏好。
+	/// 核心规则：只有 aiAuto 模式的参数会被改写，用户 manual/locked 的不覆盖
 	private func applyAICameraStrategy(_ suggestion: CameraStrategySuggestion) {
 		let strategy = photographyStrategy
 
-		// 镜头偏好
 		if strategy.lensControl == .aiAuto {
 			photographyStrategy.lensPreference = suggestion.lensPreference
+			photographyStrategy.depthPreference = suggestion.depthPreference
 		}
-
-		// 曝光偏好
 		if strategy.exposureControl == .aiAuto {
 			photographyStrategy.brightnessPreference = suggestion.brightnessPreference
 			photographyStrategy.motionPriority = suggestion.motionPriority
 		}
-
-		// 对焦偏好
 		if strategy.focusControl == .aiAuto {
 			photographyStrategy.focusPreference = suggestion.focusPreference
 		}
-
-		// 白平衡偏好
 		if strategy.whiteBalanceControl == .aiAuto {
 			photographyStrategy.whiteBalancePreference = suggestion.whiteBalancePreference
 		}
+	}
 
-		// 景深偏好（与镜头联动，仅在镜头处于 AI 自动时跟随）
-		if strategy.lensControl == .aiAuto {
-			photographyStrategy.depthPreference = suggestion.depthPreference
+	/// 消费一次构图分析结果（人物跟踪方案 / 方案生成）
+	private func ingestAnalysis(_ result: PhotographyAnalysisResult) {
+		photographyAnalysis = result
+
+		// 方案分析阶段：方案生成由 analyzeFrameNow 触发（AdaCrop 参谋完成后）
+		if coachPhase == .analyzing {
+			return
+		}
+
+		guard coachPhase == .guiding || coachPhase == .achieved,
+		      let plan = selectedPlan else { return }
+
+		// 方案跟踪分派
+		switch plan.tracking {
+		case .person:
+			ingestPersonTracking(result, plan: plan)
+		case .saliency:
+			ingestSaliencyPlanTick()
+		case .none:
+			// 静态方案：无实时位置反馈，标记圈 + 方案说明常驻
+			coachGuidance = nil
+			publishSuggestion(plan.detail)
 		}
 	}
-	
-	// MARK: - 构图引导计算
-	
-	/// 从 CompositionResult 构建 CurrentComposition
+
+	/// 人物跟踪方案的一次引导更新
+	private func ingestPersonTracking(_ result: PhotographyAnalysisResult, plan: CompositionPlan) {
+		// 群像方案：以群体包围盒为"当前主体"（并集中心/高度）
+		if plan.isGroup, let group = result.composition.groupBoundingBox {
+			let current = CurrentComposition(
+				subjectCenterX: group.midX,
+				subjectCenterY: group.midY,
+				subjectWidthRatio: group.width,
+				subjectHeightRatio: group.height,
+				faceCenterX: nil,
+				faceCenterY: nil,
+				headRoomRatio: 0,
+				minEdgeDistance: 0,
+				isSubjectComplete: true,
+				overallScore: result.composition.score,
+				subjectPosition: result.composition.subjectPosition
+			)
+			applyGuidance(current: current,
+						  target: planTarget(for: plan, currentHeight: group.height))
+			return
+		}
+
+		let person = result.composition.person
+		guard person.detected else {
+			coachGuidance = nil
+			if subjectLostSince == nil { subjectLostSince = Date() }
+			if let lost = subjectLostSince, Date().timeIntervalSince(lost) > 0.6 {
+				cancelAutoCapture()
+				if coachPhase == .achieved { coachPhase = .guiding }
+				publishSuggestion("人物出画面了，转回标记圈")
+			}
+			return
+		}
+		subjectLostSince = nil
+		applyGuidance(
+			current: makeCurrentComposition(from: result.composition),
+			target: planTarget(for: plan, currentHeight: person.heightRatio)
+		)
+	}
+
+	/// 方案目标：位置来自方案，尺寸目标由距离建议决定
+	private func planTarget(for plan: CompositionPlan, currentHeight: CGFloat) -> CompositionTarget {
+		var target = CompositionTarget(
+			targetCenterX: lockedTargetPoint?.x ?? plan.subjectTarget.x,
+			// 方案 y 从顶部计，引擎 y 向上：1 - y
+			targetCenterY: 1 - plan.subjectTarget.y,
+			targetWidthRatio: 0.4,
+			targetHeightRatio: planHeightTarget(plan, currentHeight: currentHeight),
+			targetHeadRoom: 0.12,
+			preferredLens: .keepCurrent,
+			compositionStyle: .ruleOfThirds,
+			targetScore: 85,
+			adviceTitle: plan.title,
+			adviceText: plan.detail,
+			suggestedStyle: plan.styleWord
+		)
+		switch plan.composition {
+		case .centerSymmetry:
+			target.compositionStyle = .center
+		default:
+			break
+		}
+		return target
+	}
+
+	/// 距离建议 → 目标主体高度
+	private func planHeightTarget(_ plan: CompositionPlan, currentHeight: CGFloat) -> CGFloat {
+		switch plan.distance {
+		case .closer: return max(currentHeight, 0.68)
+		case .farther: return min(currentHeight, 0.3)
+		case .keep: return currentHeight
+		}
+	}
+
+	/// 统一的引导应用：计算 GuidanceResult + 达标阶段迁移
+	private func applyGuidance(current: CurrentComposition, target: CompositionTarget) {
+		currentComposition = current
+		compositionTarget = target
+		guard compositionRectInView.width > 0 else {
+			coachGuidance = nil
+			return
+		}
+		let guidance = guidanceEngine.compute(
+			current: current,
+			target: target,
+			viewSize: compositionRectInView.size
+		)
+		coachGuidance = guidance
+
+		if guidance.state == .optimal {
+			if coachPhase != .achieved {
+				coachPhase = .achieved
+				HapticManager.shared.focusLock()
+				scheduleAutoCaptureIfEnabled()
+			}
+		} else if coachPhase == .achieved {
+			coachPhase = .guiding
+			cancelAutoCapture()
+		}
+		publishSuggestion(chipText(guidance: guidance, plan: selectedPlan))
+	}
+
+	// MARK: - DeepSeek Vision 云方案流（MVP Final Plan §6/§16/§18）
+
+	/// 发送帧到 DeepSeek Vision 生成构图方案；JSON 无效重试一次，
+	/// 仍失败回退本地启发式方案（相机永不因云端失败而不可用）
+	private func requestCloudPlans(attempt: Int) {
+		// 记录发起时的会话代数：回调返回时若会话已经重新开始（代数变了），说明这是
+		// 上一轮已停止/已重新开始会话的过期响应，直接丢弃避免串扰新会话
+		let generation = aiSessionGeneration
+		guard let (service, _) = VisionAIServiceFactory.make(), let frame = cloudFrameData else {
+			startLocalPlanFallback()
+			return
+		}
+
+		service.sendVisionRequest(jpegData: frame,
+								  prompt: CompositionPrompt.planRequest,
+								  systemPrompt: CompositionPrompt.systemRole) { [weak self] result in
+			guard let self, self.aiSessionGeneration == generation else { return }
+			switch result {
+			case .success(let text):
+				guard let response = CompositionPlanResponse.parse(from: text),
+					  !(response.plans ?? []).isEmpty else {
+					// §18 无效 JSON：重试一次
+					if attempt < 2 {
+						self.requestCloudPlans(attempt: attempt + 1)
+					} else {
+						print("[Vision] invalid plan JSON, raw:", text.prefix(500))
+						self.startLocalPlanFallback(note: "云端解析失败，已用本地方案")
+					}
+					return
+				}
+				self.deliverCloudPlans(response)
+
+			case .failure(let error):
+				// §18 请求失败（网络/鉴权/限流）：重试一次后回退本地
+				if attempt < 2 {
+					self.requestCloudPlans(attempt: attempt + 1)
+				} else {
+					print("[Vision] request failed:", error.localizedDescription)
+					self.startLocalPlanFallback(note: "云端请求失败（\(error.localizedDescription)），已用本地方案")
+				}
+			}
+		}
+	}
+
+	private func deliverCloudPlans(_ response: CompositionPlanResponse) {
+		let plans = CompositionPlanMapper.plans(from: response)
+		guard !plans.isEmpty else {
+			if cloudAttempt < 2 { cloudAttempt += 1; requestCloudPlans(attempt: cloudAttempt + 1); return }
+			startLocalPlanFallback(note: "云端方案为空，已用本地方案")
+			return
+		}
+		cloudPlanInFlight = false
+		guard coachPhase == .analyzing || (coachPhase == .plans && selectedPlan == nil) else { return }
+		let isUpgradeFromLocal = coachPhase == .plans
+		compositionPlans = plans
+		coachSceneLabel = response.scene?.type
+		coachGuidance = nil
+		coachPhase = .plans
+		HapticManager.shared.soft()
+		if isUpgradeFromLocal {
+			coachSuggestion = "云端方案已就绪，已为你更新更懂场景的构图建议"
+			lastSuggestionChange = Date()
+		}
+	}
+
+	/// 本地启发式兜底：走原有的证据积累 → 规则方案流程
+	private func startLocalPlanFallback(note: String? = nil) {
+		guard coachPhase == .analyzing else {
+			cloudPlanInFlight = false
+			cloudFrameData = nil
+			return
+		}
+		cloudPlanInFlight = false
+		cloudFrameData = nil
+		if let note {
+			coachSuggestion = note
+			lastSuggestionChange = Date()
+			pendingSuggestion = nil
+			suggestionDebounceWork?.cancel()
+		}
+		planAnalysisStartedAt = Date()
+		pendingFrameForAnalysis = true
+		if coachPhase == .analyzing { return }
+		coachPhase = .analyzing
+	}
+
+	// MARK: - 方案生成与选择（本地启发式）
+
+	/// 分析证据就绪 → 生成构图方案
+	private func generatePlans() {
+		// auto 模式下本地 AdaCrop 预测是异步的：它开始时 coachPhase 还是 .analyzing，
+		// 但完成回调返回时云端可能已经先一步送达并把 coachPhase 推进到 .plans。
+		// 这里再检一次避免把已展示的云端方案覆盖回本地方案。
+		guard coachPhase == .analyzing else { return }
+		planGenerationDone = true
+		let scene = currentScene ?? .generic
+		let person = photographyAnalysis?.composition.person
+		let composition = photographyAnalysis?.composition
+		var plans = planProvider.generatePlans(
+			scene: scene,
+			person: person,
+			bodyCount: composition?.bodyCount ?? 0,
+			groupBox: composition?.groupBoundingBox,
+			zoomFactor: zoomState.currentFactor,
+			hasTelephoto: zoomPresets.contains { $0.lens == .telephoto },
+			hasUltraWide: zoomPresets.contains { $0.lens == .ultraWide },
+			cropHint: sessionCropHint
+		)
+		if plans.isEmpty {
+			// 兜底：至少给一个通用方案
+			plans = planProvider.generatePlans(
+				scene: .generic, person: nil, bodyCount: 0, groupBox: nil,
+				zoomFactor: zoomState.currentFactor,
+				hasTelephoto: false, hasUltraWide: false, cropHint: nil
+			)
+		}
+		coachGuidance = nil
+		compositionPlans = plans
+		coachPhase = .plans
+		HapticManager.shared.soft()
+	}
+
+	/// 用户选择方案 → 进入引导（目标锁定自方案）
+	func selectPlan(at index: Int) {
+		guard compositionPlans.indices.contains(index) else { return }
+		var plan = compositionPlans[index]
+
+		// 云方案按 main_subject 推断跟踪方式；若推断为人物但当前画面
+		// 没有检测到人物（拍物品很常见），降级为显著性跟踪
+		if plan.tracking == .person,
+		   photographyAnalysis?.composition.person.detected != true {
+			plan.tracking = .saliency
+			saliencyLostSince = nil
+			lastRawSaliencyCenter = nil
+		}
+		selectedPlan = plan
+		selectedPlanIndex = index
+
+		lockedTargetPoint = CGPoint(x: plan.subjectTarget.x, y: 1 - plan.subjectTarget.y)
+		subjectLostSince = nil
+		guidanceEngine.reset()
+		saliencySmoother.reset()
+		saliencyCenter = nil
+
+		// 焦段建议：自动执行（P1 auto lens switching）+ 变焦盘高亮同步
+		if let hint = plan.focalHint, let factor = Self.parseFocalHint(hint) {
+			sceneRecommendedFactor = factor
+			if let preset = zoomPresets.first(where: { abs($0.zoomFactor - factor) < 0.05 }),
+			   abs(preset.zoomFactor - zoomState.currentFactor) > 0.05 {
+				camera.selectZoomPreset(preset)
+			}
+		} else {
+			sceneRecommendedFactor = nil
+		}
+
+		coachSceneLabel = plan.title
+		coachSuggestion = plan.instruction ?? plan.detail
+		lastSuggestionChange = Date()
+		pendingSuggestion = nil
+		suggestionDebounceWork?.cancel()
+		coachGuidance = nil
+		coachPhase = .guiding
+		HapticManager.shared.selection()
+		pendingFrameForAnalysis = true
+	}
+
+	/// "2x"/"0.5x" → 变焦倍率
+	private static func parseFocalHint(_ hint: String) -> CGFloat? {
+		let trimmed = hint
+			.replacingOccurrences(of: "x", with: "")
+			.replacingOccurrences(of: "X", with: "")
+			.trimmingCharacters(in: .whitespaces)
+		guard let value = Double(trimmed), value > 0 else { return nil }
+		return CGFloat(value)
+	}
+
+	/// chip 文案发布（防抖）：相同文案不发布；
+	/// 最小驻留 400ms；反向指令（左↔右/近↔远/高↔低）冷却 600ms，
+	/// 未到期时保留最新意图延迟补发
+	private func publishSuggestion(_ text: String) {
+		guard text != coachSuggestion else { return }
+		let now = Date()
+		let elapsed = now.timeIntervalSince(lastSuggestionChange)
+		let required: TimeInterval = Self.isOppositeSuggestion(text, coachSuggestion) ? 0.6 : 0.4
+
+		guard elapsed >= required else {
+			pendingSuggestion = text
+			suggestionDebounceWork?.cancel()
+			let work = DispatchWorkItem { [weak self] in
+				guard let self, let pending = self.pendingSuggestion else { return }
+				self.pendingSuggestion = nil
+				self.publishSuggestion(pending)
+			}
+			suggestionDebounceWork = work
+			DispatchQueue.main.asyncAfter(deadline: .now() + (required - elapsed), execute: work)
+			return
+		}
+
+		pendingSuggestion = nil
+		suggestionDebounceWork?.cancel()
+		coachSuggestion = text
+		lastSuggestionChange = now
+	}
+
+	/// 判断两条指令是否互为反向
+	private static func isOppositeSuggestion(_ a: String, _ b: String) -> Bool {
+		let pairs = [("向左", "向右"), ("靠近", "退远"), ("举高", "放低")]
+		return pairs.contains { pair in
+			(a.contains(pair.0) && b.contains(pair.1)) || (a.contains(pair.1) && b.contains(pair.0))
+		}
+	}
+
+	// MARK: - 场景化覆盖层（P1: scene-specific overlays）
+
+	/// 引导元素样式：按所选方案的构图类型/场景切换
+	enum GuideStyle {
+		case thirds        // 三分网格（通用/三分法/留白/环境人像）
+		case centerCross   // 中心十字（居中对称/特写/美食）
+		case documentFrame // 中央取景框（文档）
+	}
+
+	var coachGuideStyle: GuideStyle {
+		if currentScene == .document, selectedPlan?.tracking == .none {
+			return .documentFrame
+		}
+		switch selectedPlan?.composition {
+		case .centerSymmetry: return .centerCross
+		default: return .thirds
+		}
+	}
+
+	/// 距离估算（人物方案）：主体画面占比 × 变焦 → 粗略米数区间
+	var distanceEstimateText: String? {
+		guard coachPhase == .guiding || coachPhase == .achieved,
+		      selectedPlan?.tracking == .person,
+		      let person = photographyAnalysis?.composition.person,
+		      person.detected else { return nil }
+		let effective = person.heightRatio * zoomState.currentFactor
+		switch effective {
+		case ..<0.12: return "距主体约 5 米开外"
+		case ..<0.25: return "距主体约 3-5 米"
+		case ..<0.45: return "距主体约 2 米"
+		case ..<0.75: return "距主体约 1 米"
+		default: return "距主体约 0.5 米内"
+		}
+	}
+
+	/// 供 UI 显示的目标标记点（换算统一走 CoordinateConverter）
+	var displayTargetMarkerPoint: CGPoint? {
+		if let imagePoint = coachGuidance?.targetPointInView {
+			let viewPoint = CoordinateConverter.viewPoint(fromImagePoint: imagePoint,
+														  rect: compositionRectInView)
+			return isFrontCamera
+				? CGPoint(x: CoordinateConverter.mirroredX(viewPoint.x, rectWidth: compositionRectInView.width),
+						  y: viewPoint.y)
+				: viewPoint
+		}
+		// 主体丢失/引导暂停时：锁定目标点仍然显示——它是"转回来"的参照
+		if let locked = lockedTargetPoint, compositionRectInView.width > 0 {
+			let viewPoint = CoordinateConverter.viewPoint(fromImagePoint: locked,
+														  rect: compositionRectInView)
+			return isFrontCamera
+				? CGPoint(x: CoordinateConverter.mirroredX(viewPoint.x, rectWidth: compositionRectInView.width),
+						  y: viewPoint.y)
+				: viewPoint
+		}
+		// 静态方案（无跟踪）：方案目标点直接上屏
+		if let plan = selectedPlan, plan.tracking == .none, compositionRectInView.width > 0 {
+			let viewPoint = CoordinateConverter.viewPoint(fromPlanTarget: plan.subjectTarget,
+														  rect: compositionRectInView)
+			return isFrontCamera
+				? CGPoint(x: CoordinateConverter.mirroredX(viewPoint.x, rectWidth: compositionRectInView.width),
+						  y: viewPoint.y)
+				: viewPoint
+		}
+		return nil
+	}
+
+	/// 一行建议指令（chip 文案）：水平倾斜最优先（先摆平再构图），
+	/// 其次引导方向，无引导按方案/场景说
+	private func chipText(guidance: GuidanceResult?, plan: CompositionPlan?) -> String {
+		// 水平仪提示：倾斜超过 2.5° 时优先纠正（符号如真机相反可翻转）
+		if let roll = cameraRollDegrees, abs(roll) > 2.5,
+		   coachPhase == .guiding || coachPhase == .achieved {
+			return roll < 0 ? "画面向左倾斜，先摆平" : "画面向右倾斜，先摆平"
+		}
+		if let guidance {
+			switch guidance.state {
+			case .optimal:
+				return isAutoCaptureEnabled ? "构图完成，即将拍摄" : "构图完成，可以拍了"
+			case .nearlyOptimal:
+				return "把主体对准标记圈，就差一点"
+			case .adjusting:
+				return directionText(for: guidance)
+			}
+		}
+		if let plan {
+			return plan.detail
+		}
+		return currentScene?.defaultInstruction ?? SceneClassifier.SceneKind.generic.defaultInstruction
+	}
+
+	/// 方向指令（§11：一次只给一条，优先级 水平 > 垂直 > 距离；
+	/// 明确"手机"主语，避免与"移动主体"混淆；带出画保护）
+	private func directionText(for guidance: GuidanceResult) -> String {
+		// 出画保护：主体贴近边缘且当前指令会把它推出画面时，先稳住
+		if compositionRectInView.width > 0,
+		   let current = guidance.currentPointInView {
+			let nx = current.x / compositionRectInView.width
+			let ny = current.y / compositionRectInView.height
+			if nx < 0.07, guidance.horizontalDirection == .moveRight { return "主体快出画面了，先停一下" }
+			if nx > 0.93, guidance.horizontalDirection == .moveLeft { return "主体快出画面了，先停一下" }
+			if ny < 0.07, guidance.verticalDirection == .moveUp { return "主体快出画面了，先停一下" }
+			if ny > 0.93, guidance.verticalDirection == .moveDown { return "主体快出画面了，先停一下" }
+		}
+		switch guidance.horizontalDirection {
+		case .moveLeft: return isFrontCamera ? "手机向右移一点 →" : "手机向左移一点 ←"
+		case .moveRight: return isFrontCamera ? "手机向左移一点 ←" : "手机向右移一点 →"
+		default: break
+		}
+		switch guidance.verticalDirection {
+		case .moveUp: return "举高一点 ↑"
+		case .moveDown: return "放低一点 ↓"
+		default: break
+		}
+		switch guidance.distanceDirection {
+		case .moveCloser: return "再靠近一点"
+		case .moveFarther: return "退远一点"
+		default: break
+		}
+		return "保持稳定，微调构图"
+	}
+
+	/// 从构图分析结果构建引导引擎输入
 	private func makeCurrentComposition(from result: CompositionResult) -> CurrentComposition {
 		let person = result.person
-		
 		return CurrentComposition(
 			subjectCenterX: person.centerX,
 			subjectCenterY: person.centerY,
@@ -1044,278 +1599,76 @@ final class CaptureViewModel: ObservableObject {
 			faceCenterX: person.faceCenterX,
 			faceCenterY: person.faceCenterY,
 			headRoomRatio: person.headRoom,
-			minEdgeDistance: 0, // 简化：暂时不计算，后续优化
+			minEdgeDistance: 0,
 			isSubjectComplete: person.isFullBody,
 			overallScore: result.score,
 			subjectPosition: result.subjectPosition
 		)
 	}
-	
-	/// 根据当前构图和目标，计算引导结果
-	private func updateGuidanceResult() {
-		guard let current = currentComposition,
-			  let target = compositionTarget,
-			  guidanceMode == .aiTarget else {
-			return
-		}
-		
-		let viewSize = compositionRectInView.size
-		
-		// 如果视图大小还没确定，先不用计算
-		guard viewSize.width > 0 && viewSize.height > 0 else {
-			return
-		}
-		
-		guidanceResult = guidanceEngine.compute(
-			current: current,
-			target: target,
-			viewSize: viewSize
-		)
-	}
-	
-	private func detectCropRegion(using pixel: CVPixelBuffer, orientation: CGImagePropertyOrientation) {
-		let aspectRatio: CGFloat = compositionRectInView != .zero
-			? compositionRectInView.width / compositionRectInView.height
-			: 3.0 / 4.0
-		
-		detector.detectBestCrop(
-			in: pixel,
-			orientation: orientation,
-			targetAspectRatio: aspectRatio
-		) { [weak self] crop in
-			guard let self, let crop else {
-				DispatchQueue.main.async {
-					self?.setStage(.waitingForStability, message: "目标识别失败，等待重试...")
-					self?.lastDetectionFailureTime = Date()
-					self?.resetDetectionState()
-				}
-				return
-			}
-			
-			DispatchQueue.main.async {
-				if let rectInView = self.rectInCompositionSpace(from: crop.rect, orientation: orientation) {
-					self.initialCropRectInView = rectInView
-					self.cropRectInView = rectInView
-					
-					let center = CGPoint(x: rectInView.midX, y: rectInView.midY)
-					self.boxCenterManager.setBaseCenter(
-						center,
-						with: self.motion.deviceMotion?.attitude
-					)
-					self.motion.lockReferenceAttitude()
-					
-					self.detectionReady = true
-					HapticManager.shared.success()
-					self.setStage(.templateReady, message: "目标已锁定: \(crop.detectionType)，移动设备对齐中心圆")
-					self.isAligned = false
-				} else {
-					self.initialCropRectInView = nil
-					self.cropRectInView = nil
-					self.boxCenterManager.reset()
-				}
-				
-				self.detectionInProgress = false
-			}
-		}
-	}
-	
-	private func scheduleAutoCapture() {
+
+	// MARK: - 自动拍摄（构图完成 + 可选开启）
+
+	private func scheduleAutoCaptureIfEnabled() {
 		guard isAutoCaptureEnabled else { return }
-		
-		autoCaptureWorkItem?.cancel()
-		setStage(.readyToCapture, message: "对准成功，准备拍照...")
-		
-		let work = DispatchWorkItem { [weak self] in
-			guard let self, self.isAligned else { return }
-			self.setStage(.capturingPhoto, message: "正在拍照")
-			
-			DispatchQueue.main.async {
-				self.onCaptureTriggered?()
+		cancelAutoCapture()
+
+		let total = max(0.5, captureDelay)
+		countdownDeadline = Date().addingTimeInterval(total)
+		autoCaptureCountdown = (remain: total, total: total)
+		let totalSteps = Int(ceil(total))
+		var lastStep = totalSteps
+
+		let timer = DispatchSource.makeTimerSource(queue: .main)
+		timer.schedule(deadline: .now(), repeating: 0.05)
+		timer.setEventHandler { [weak self] in
+			guard let self, let deadline = self.countdownDeadline else { return }
+			let remain = deadline.timeIntervalSinceNow
+			self.autoCaptureCountdown = (remain: max(0, remain), total: total)
+
+			// 每秒一步的倒计时震动（渐强）
+			let step = Int(ceil(max(0, remain)))
+			if step != lastStep {
+				lastStep = step
+				if step > 0 {
+					HapticManager.shared.countdown(step: totalSteps - step + 1, total: totalSteps)
+				}
 			}
-			
+
+			guard remain <= 0 else { return }
+			self.autoCaptureCountdown = nil
+			self.countdownTimer?.cancel()
+			self.countdownTimer = nil
+
+			// 触发瞬间会话可能已被打断（切镜头/退出/失稳取消）
+			guard self.coachPhase == .achieved else { return }
+			self.onCaptureTriggered?()
 			DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
 				self.capturePhoto()
 			}
 		}
-		autoCaptureWorkItem = work
-		DispatchQueue.main.asyncAfter(deadline: .now() + captureDelay, execute: work)
+		countdownTimer = timer
+		timer.resume()
 	}
-	
+
 	private func cancelAutoCapture() {
+		countdownTimer?.cancel()
+		countdownTimer = nil
+		countdownDeadline = nil
+		// 自拍倒计时与 AI 自动拍摄共用同一个倒计时环 UI 状态，任何一方被取消都应该把另一方一起清掉
+		selfTimerTimer?.cancel()
+		selfTimerTimer = nil
+		selfTimerDeadline = nil
+		autoCaptureCountdown = nil
 		autoCaptureWorkItem?.cancel()
 		autoCaptureWorkItem = nil
 	}
-	
-	// MARK: - Alignment Detection
-	
-	private func checkAlignmentByDistance() {
-		let alignedNow = boxCenterManager.isAlignedWithCenter(tolerance: alignmentTolerance)
-		
-		if alignedNow && !isAligned {
-			HapticManager.shared.focusLock()
-			scheduleAutoCapture()
-		} else if !alignedNow && isAligned {
-			HapticManager.shared.warning()
-			cancelAutoCapture()
-			setStage(.templateReady, message: "请重新对准中心点")
-		}
-		
-		isAligned = alignedNow
-	}
-	
-	private func setStage(_ stage: PipelineStage, message: String? = nil) {
-		let applyChange = {
-			self.pipelineStage = stage
-			if let message {
-				self.debugMessage = message
-			}
-			// 🔥 使用统一的刷新机制
-			self.refreshUserGuidance()
-		}
-		if Thread.isMainThread {
-			applyChange()
-		} else {
-			DispatchQueue.main.async(execute: applyChange)
-		}
-	}
-	
+
 	// MARK: - Geometry Helpers
-	
-	private func makeCompositionPixelBuffer(from pixelBuffer: CVPixelBuffer,
-											orientation: CGImagePropertyOrientation) -> CVPixelBuffer? {
-		let orientedImage = CIImage(cvPixelBuffer: pixelBuffer).oriented(orientation)
-		let extent = orientedImage.extent
-		let desiredAspect: CGFloat = 3.0 / 4.0
-		var cropRect = extent
-		let currentAspect = extent.width / extent.height
-		
-		if currentAspect > desiredAspect {
-			let newWidth = extent.height * desiredAspect
-			cropRect.origin.x = extent.midX - newWidth * 0.5
-			cropRect.size.width = newWidth
-		} else if currentAspect < desiredAspect {
-			let newHeight = extent.width / desiredAspect
-			cropRect.origin.y = extent.midY - newHeight * 0.5
-			cropRect.size.height = newHeight
-		}
-		
-		let croppedImage = orientedImage.cropped(to: cropRect)
-		
-		var outputBuffer: CVPixelBuffer?
-		let pixelFormat = CVPixelBufferGetPixelFormatType(pixelBuffer)
-		let attributes: [String: Any] = [
-			kCVPixelBufferCGImageCompatibilityKey as String: true,
-			kCVPixelBufferCGBitmapContextCompatibilityKey as String: true
-		]
-		
-		let status = CVPixelBufferCreate(kCFAllocatorDefault,
-										 Int(cropRect.width),
-										 Int(cropRect.height),
-										 pixelFormat,
-										 attributes as CFDictionary,
-										 &outputBuffer)
-		guard status == kCVReturnSuccess, let buffer = outputBuffer else { return nil }
-		
-		CaptureViewModel.ciContext.render(croppedImage, to: buffer)
-		return buffer
-	}
-	
+
 	private func pixelOrientation(for pixelBuffer: CVPixelBuffer) -> CGImagePropertyOrientation {
 		let width = CVPixelBufferGetWidth(pixelBuffer)
 		let height = CVPixelBufferGetHeight(pixelBuffer)
 		return width > height ? .right : .up
-	}
-	
-	private func rotateNormalizedRect(_ rect: CGRect,
-									  for orientation: CGImagePropertyOrientation) -> CGRect {
-		switch orientation {
-		case .up, .upMirrored:
-			return rect
-		case .right, .rightMirrored:
-			return CGRect(x: 1.0 - rect.origin.y - rect.size.height,
-						  y: rect.origin.x,
-						  width: rect.size.height,
-						  height: rect.size.width)
-		case .down, .downMirrored:
-			return CGRect(x: 1.0 - rect.origin.x - rect.size.width,
-						  y: 1.0 - rect.origin.y - rect.size.height,
-						  width: rect.size.width,
-						  height: rect.size.height)
-		case .left, .leftMirrored:
-			return CGRect(x: rect.origin.y,
-						  y: 1.0 - rect.origin.x - rect.size.width,
-						  width: rect.size.height,
-						  height: rect.size.width)
-		@unknown default:
-			return rect
-		}
-	}
-	
-	private func rectInCompositionSpace(from rect: CGRect,
-										orientation: CGImagePropertyOrientation) -> CGRect? {
-		guard compositionRectInView != .zero else { return nil }
-		let composition = compositionRectInView
-		let rotated = rotateNormalizedRect(rect, for: orientation)
-		let x = composition.minX + rotated.origin.x * composition.width
-		let y = composition.minY + (1.0 - rotated.origin.y - rotated.size.height) * composition.height
-		let width = rotated.size.width * composition.width
-		let height = rotated.size.height * composition.height
-		let mapped = CGRect(x: x, y: y, width: width, height: height)
-		guard mapped.intersects(composition) else { return nil }
-		return mapped.intersection(composition)
-	}
-}
-
-// MARK: - Pipeline Stage
-
-extension CaptureViewModel {
-	enum PipelineStage: Equatable {
-		case idle
-		case startingCamera
-		case waitingForStability
-		case detectingRegion
-		case templateReady
-		case readyToCapture
-		case capturingPhoto
-		case savingPhoto
-		case error
-		
-		var progress: Double {
-			switch self {
-			case .idle: return 0.05
-			case .startingCamera: return 0.15
-			case .waitingForStability: return 0.3
-			case .detectingRegion: return 0.55
-			case .templateReady: return 0.7
-			case .readyToCapture: return 0.92
-			case .capturingPhoto: return 0.95
-			case .savingPhoto: return 1.0
-			case .error: return 0.2
-			}
-		}
-		
-		var guidanceText: String {
-			switch self {
-			case .idle:
-				return ""
-			case .startingCamera:
-				return "正在启动相机"
-			case .waitingForStability:
-				return "请保持稳定"
-			case .detectingRegion:
-				return "正在识别最佳构图..."
-			case .templateReady:
-				return "请将圆点移动到画面中心"
-			case .readyToCapture:
-				return "即将拍照，请保持稳定"
-			case .capturingPhoto:
-				return "正在拍照..."
-			case .savingPhoto:
-				return "照片已保存"
-			case .error:
-				return "发生错误，请重试"
-			}
-		}
 	}
 }
 

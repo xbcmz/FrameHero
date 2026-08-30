@@ -19,6 +19,19 @@ struct PhotoRecord: Identifiable, Codable, Equatable {
     /// 旧记录没有该字段——可选属性经合成解码 decodeIfPresent，老 records.json 直接兼容。
     var compositionScore: Int?
 
+    /// 图库「AI 点评」结果缓存（本地/云端），避免每次打开面板都重新请求一次。
+    /// 旧记录同样没有该字段，decodeIfPresent 兼容。
+    var critique: PhotoCritique?
+
+    /// 拍摄落盘后的本地清晰度预审结果（Laplacian 方差判糊），nil = 尚未检测/旧记录
+    var isBlurry: Bool?
+
+    /// 连拍分组 ID：同一次长按连拍产生的照片共享同一个 ID，用于拍后统一优选；nil = 非连拍
+    var burstID: UUID?
+
+    /// 是否是连拍分组里被自动选中的最佳一张（清晰度 + 构图/点评分数综合排序）
+    var isBurstBest: Bool?
+
     init(id: UUID = UUID(),
          creationDate: Date = Date(),
          localIdentifier: String? = nil,
@@ -28,7 +41,11 @@ struct PhotoRecord: Identifiable, Codable, Equatable {
          aperture: Double? = nil,
          imageWidth: Int? = nil,
          imageHeight: Int? = nil,
-         compositionScore: Int? = nil) {
+         compositionScore: Int? = nil,
+         critique: PhotoCritique? = nil,
+         isBlurry: Bool? = nil,
+         burstID: UUID? = nil,
+         isBurstBest: Bool? = nil) {
         self.id = id
         self.creationDate = creationDate
         self.localIdentifier = localIdentifier
@@ -39,6 +56,10 @@ struct PhotoRecord: Identifiable, Codable, Equatable {
         self.imageWidth = imageWidth
         self.imageHeight = imageHeight
         self.compositionScore = compositionScore
+        self.critique = critique
+        self.isBlurry = isBlurry
+        self.burstID = burstID
+        self.isBurstBest = isBurstBest
     }
 }
 

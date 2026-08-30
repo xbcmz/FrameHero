@@ -31,17 +31,57 @@ final class AIConfigurationStore: ObservableObject {
     static let defaultBaseURL = "https://api.deepseek.com/v1"
     static let chatModel = "deepseek-chat"
     static let reasonerModel = "deepseek-reasoner"
+    static let defaultVisionModel = "deepseek-v4-flash-vision-exp"
 
+    /// 文本模型（拍后点评等云端文本能力）
     static let availableModels: [(id: String, name: String, description: String)] = [
         (chatModel, "通用 V3", "响应快，适合实时建议"),
         (reasonerModel, "深度思考 R1", "更细腻但更慢，消耗更多 token")
     ]
+
+    /// 视觉模型（图片理解，独立于文本模型的能力线）
+    static let availableVisionModels: [(id: String, name: String, description: String)] = [
+        (defaultVisionModel, "V4 Flash Vision", "实验版多模态：看懂画面，输出结构化场景分析")
+    ]
+
+    /// 构图分析模式：本地启发式 vs 云端 Vision，决定「AI 构图」点按后走哪条路径
+    ///
+    /// - auto：本地优先 + 云端增强（默认）。本地管线（场景分类 + 人物检测 + AdaCrop）
+    ///   立即并行启动，通常 ~1 秒出方案；云端方案若在用户选定前送达，无感升级，
+    ///   来迟了或用户已选定/已退出则直接丢弃，不会二次打扰。
+    /// - localOnly：仅本地，即使配置了云端 Key 也不发起网络请求。用于对比测试本地路径体验。
+    /// - cloudOnly：仅云端（旧版行为），本地管线不参与出方案。用于对比测试云端路径体验。
+    enum CompositionAnalysisMode: String, CaseIterable, Identifiable, Codable {
+        case auto
+        case localOnly
+        case cloudOnly
+
+        var id: String { rawValue }
+
+        var shortName: String {
+            switch self {
+            case .auto: return "自动"
+            case .localOnly: return "仅本地"
+            case .cloudOnly: return "仅云端"
+            }
+        }
+
+        var description: String {
+            switch self {
+            case .auto: return "本地优先 + 云端增强：本地先出方案，云端就绪后无感升级"
+            case .localOnly: return "只用本地启发式方案，不联网，测试本地路径速度"
+            case .cloudOnly: return "只等云端方案（旧版行为），测试云端路径速度"
+            }
+        }
+    }
 
     private static let keychainAccount = "deepseek.apiKey"
     private enum DefaultsKey {
         static let cloudEnabled = "ai.cloudAIEnabled"
         static let baseURL = "ai.baseURL"
         static let model = "ai.model"
+        static let visionModel = "ai.visionModel"
+        static let compositionAnalysisMode = "ai.compositionAnalysisMode"
     }
 
     // MARK: - 状态
@@ -56,9 +96,19 @@ final class AIConfigurationStore: ObservableObject {
         didSet { UserDefaults.standard.set(baseURL, forKey: DefaultsKey.baseURL) }
     }
 
-    /// 模型 ID
+    /// 文本模型 ID
     @Published var model: String {
         didSet { UserDefaults.standard.set(model, forKey: DefaultsKey.model) }
+    }
+
+    /// 视觉模型 ID（图片理解，独立于文本模型的能力线）
+    @Published var visionModel: String {
+        didSet { UserDefaults.standard.set(visionModel, forKey: DefaultsKey.visionModel) }
+    }
+
+    /// 构图分析模式（自动 / 仅本地 / 仅云端），拍摄页「AI 构图」按此选择路径
+    @Published var compositionAnalysisMode: CompositionAnalysisMode {
+        didSet { UserDefaults.standard.set(compositionAnalysisMode.rawValue, forKey: DefaultsKey.compositionAnalysisMode) }
     }
 
     /// API Key（Keychain 持久化，内存中仅保留副本供同步读取）
@@ -83,6 +133,15 @@ final class AIConfigurationStore: ObservableObject {
 
         let storedModel = defaults.string(forKey: DefaultsKey.model)
         self.model = (storedModel?.isEmpty == false) ? storedModel! : Self.chatModel
+
+        let storedVision = defaults.string(forKey: DefaultsKey.visionModel)
+        self.visionModel = (storedVision?.isEmpty == false)
+            ? storedVision!
+            : Self.defaultVisionModel
+
+        let storedMode = defaults.string(forKey: DefaultsKey.compositionAnalysisMode)
+            .flatMap(CompositionAnalysisMode.init(rawValue:))
+        self.compositionAnalysisMode = storedMode ?? .auto
 
         self.apiKey = KeychainStore.load(account: Self.keychainAccount) ?? ""
     }
@@ -148,6 +207,7 @@ final class AIConfigurationStore: ObservableObject {
     func resetAdvancedSettings() {
         baseURL = Self.defaultBaseURL
         model = Self.chatModel
+        visionModel = Self.defaultVisionModel
     }
 }
 

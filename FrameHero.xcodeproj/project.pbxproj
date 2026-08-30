@@ -11,10 +11,15 @@
 		03A9AF27C3F9DDD07744750D /* CompositionEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = A17C525FECAE9A442F66F46B /* CompositionEngine.swift */; };
 		0A46EAA4E72F1C66EE62CD9C /* PhotographyAdvisor.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF1BF4596AC0314B2D812539 /* PhotographyAdvisor.swift */; };
 		A1B2C3D4E5F60718293A4B5C /* ZoomDialView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D4C5B6A79880718293B4C5D6 /* ZoomDialView.swift */; };
+		A1B2C3D4E5F60718293A4B81 /* SceneClassifier.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60718293A4B82 /* SceneClassifier.swift */; };
+		A1B2C3D4E5F60718293A4BA1 /* CompositionPlan.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60718293A4BA2 /* CompositionPlan.swift */; };
+		A1B2C3D4E5F60718293A4BB1 /* AdaCropPlanAdvisor.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60718293A4BB2 /* AdaCropPlanAdvisor.swift */; };
+		A1B2C3D4E5F60718293A4C01 /* CompositionPlanGeneration.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60718293A4C02 /* CompositionPlanGeneration.swift */; };
+		A1B2C3D4E5F60718293A4C11 /* CoordinateConverter.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60718293A4C12 /* CoordinateConverter.swift */; };
+		A1B2C3D4E5F60718293A4B91 /* CompositionCoachOverlayView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60718293A4B92 /* CompositionCoachOverlayView.swift */; };
 		E3A9BFBD9DAE4886A90ADEDA /* ExposureControlView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B3708D3A008D44DD9AD2D9EA /* ExposureControlView.swift */; };
 		1B30D0800780441C9658DEEB /* FocusControlView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3826DB0DD3154F9C95682F4B /* FocusControlView.swift */; };
 		1CE5F0D25B704868BF3D642F /* WhiteBalanceControlView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 24522BFD86FC4CD98081971A /* WhiteBalanceControlView.swift */; };
-		1B28DC3C40E538DCB9199193 /* BoxCenterManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = ECB368E90E4AE2C8E79AB2AA /* BoxCenterManager.swift */; };
 		2542140B8782B511267E0634 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = AF1CB4E00533B2EF51575FA3 /* Assets.xcassets */; };
 		27006C734EC7504FEA26272B /* CameraManager+Photo.swift in Sources */ = {isa = PBXBuildFile; fileRef = 43C6BB08E2F5E10F67F6038B /* CameraManager+Photo.swift */; };
 		2D01FA5826A3A2AFF9821CFB /* CircleButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = 42ED594226E429C4918967F3 /* CircleButton.swift */; };
@@ -27,16 +32,21 @@
 		5027758D37742EA817051F2A /* MainTabView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CFAA264D47DAEF126F405FAA /* MainTabView.swift */; };
 		517B50AEF40CF425B163EE70 /* AIAdviceProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = C51C273EFE2FCA7E99089DE2 /* AIAdviceProvider.swift */; };
 		A1B2C3D4E5F60718293A4B61 /* KeychainStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60718293A4B62 /* KeychainStore.swift */; };
+		A1B2C3D4E5F60718293A4BC1 /* VisionAIService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60718293A4BC2 /* VisionAIService.swift */; };
+		A1B2C3D4E5F60718293A4C21 /* PhotoCritique.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60718293A4C22 /* PhotoCritique.swift */; };
+		18CEE738046FFB277DE87A39 /* LocalPhotoCritiqueEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 873B2FA0BDB9814F6262E890 /* LocalPhotoCritiqueEngine.swift */; };
+		A9BEE4C7686AA6F2EA3241DB /* BlurDetector.swift in Sources */ = {isa = PBXBuildFile; fileRef = C03C00C4C74E234DFF6BEF2C /* BlurDetector.swift */; };
+		A1B2C3D4E5F60718293A4C31 /* PhotoCritiqueSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60718293A4C32 /* PhotoCritiqueSheet.swift */; };
+		A1B2C3D4E5F60718293A4BD1 /* ImagePreparationService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60718293A4BD2 /* ImagePreparationService.swift */; };
+		A1B2C3D4E5F60718293A4BE1 /* VisionTestSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60718293A4BE2 /* VisionTestSheet.swift */; };
 		A1B2C3D4E5F60718293A4B71 /* AIConfigurationStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60718293A4B72 /* AIConfigurationStore.swift */; };
 		5282479A64587F7E6992614C /* AdacropTeacherActor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 59E2374320C1069976212848 /* AdacropTeacherActor.swift */; };
 		52C72D16B4AB3AD32A9E9F8B /* DesignSystem.swift in Sources */ = {isa = PBXBuildFile; fileRef = 04B4979E1DDB74DCFB654003 /* DesignSystem.swift */; };
 		56BB184825DCC81909E6232A /* CameraManager+VideoOutput.swift in Sources */ = {isa = PBXBuildFile; fileRef = 018E2EB5B324EE215A3BB98B /* CameraManager+VideoOutput.swift */; };
 		65BE3406CA303E3C719B72CA /* CaptureButton.swift in Sources */ = {isa = PBXBuildFile; fileRef = A46DD46CCA69A9E9B340EFD8 /* CaptureButton.swift */; };
 		6634261E83562EF0F1B1EACF /* UserGuidanceView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7EA0B5DAEEF7F5546CD67F87 /* UserGuidanceView.swift */; };
-		68F71A8FB44408505E260A82 /* DebugPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = D04523131F073E508F3FBB20 /* DebugPanel.swift */; };
 		6A066A945B9374EF46630C23 /* HomeViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = AEC4370BEA8C08E5915A5FDD /* HomeViewModel.swift */; };
 		6F08BD440B1133304A65EC3D /* GalleryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7303984B7B0018DCF98847BD /* GalleryView.swift */; };
-		704F8F9B3D3EBD4DBB038146 /* AIGuidanceOverlayView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7E7A09F6FA9B9B08F6EDEB5 /* AIGuidanceOverlayView.swift */; };
 		71B37DAA2A51178A6B4C538D /* GuidanceResult.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9ABEFFAD09B6B0AA8B812E8A /* GuidanceResult.swift */; };
 		77705B6F48027E00CFDD486F /* AdacropStudentActor.swift in Sources */ = {isa = PBXBuildFile; fileRef = C9F803395C651876539DF06D /* AdacropStudentActor.swift */; };
 		829E184F5684EA8F80F17AF6 /* APIKeyProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8E64A3ED63555404BA3EB16 /* APIKeyProvider.swift */; };
@@ -45,7 +55,6 @@
 		8497E7CD06F03F1FA1E5F672 /* MockPhotographer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 086D8BFD7A824FD355B92AF4 /* MockPhotographer.swift */; };
 		85737FFE28AB8BCD9C95DE3A /* MotionStabilityMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8CE5C7C7AACD89E2CA8B364 /* MotionStabilityMonitor.swift */; };
 		8A745099E0430B2E483850B9 /* CameraManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1764634BAB8CA43EF093DCA4 /* CameraManager.swift */; };
-		8B41F592F99389FC3EFD3E52 /* CompositionAdviceCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 134D05DA32411134C8B58B57 /* CompositionAdviceCard.swift */; };
 		8F2DC68816C41BD8179F0F69 /* CameraPreviewSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = A057592C402B5658B542D55F /* CameraPreviewSection.swift */; };
 		A1F2E05C2C199EBAE3BB089C /* AdacropStudentActor.mlmodelc in Resources */ = {isa = PBXBuildFile; fileRef = 85D123200C6D837D78AA6565 /* AdacropStudentActor.mlmodelc */; };
 		A21ECB0B737209ECB419D0EC /* CameraManager+Zoom.swift in Sources */ = {isa = PBXBuildFile; fileRef = 774F124DDB50B49E2E3F8EFE /* CameraManager+Zoom.swift */; };
@@ -54,6 +63,7 @@
 		F9B3E3B7367E4027BF800C66 /* PhotographyStrategy.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8ECB68709A3F452D9524259F /* PhotographyStrategy.swift */; };
 		2B2D685CC7F144419100F8A2 /* CameraControlEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 30CA5A2D8C19414A8D6441E5 /* CameraControlEngine.swift */; };
 		34FA201F586E4487A6C64752 /* CameraManager+Control.swift in Sources */ = {isa = PBXBuildFile; fileRef = E35CE4E3185445E7917EA611 /* CameraManager+Control.swift */; };
+		B45EFC60CC2EAC27174C703C /* ExposureAnalyzer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2EA93EC88211D91587CED27D /* ExposureAnalyzer.swift */; };
 		A74B46F4E7AE320A8D1E99B5 /* PhotoRecord.swift in Sources */ = {isa = PBXBuildFile; fileRef = C5CA64456BF64897E46E2B70 /* PhotoRecord.swift */; };
 		A8F94FF2C029899D5A591BBA /* FrameHeroApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = D78E363B3A65DEEEB467A32D /* FrameHeroApp.swift */; };
 		AD0581809DD233E88F537823 /* PhotoDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B830931CCF0BF9946BA3DEFC /* PhotoDetailView.swift */; };
@@ -70,8 +80,6 @@
 		E347047DA74CC949F4D7A082 /* CompositionResult.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1231EF4F908F165E79A34923 /* CompositionResult.swift */; };
 		E79BFF8A4A64D38EAE546C2C /* CurrentComposition.swift in Sources */ = {isa = PBXBuildFile; fileRef = DE49BAE56AE71B593F6F2CF9 /* CurrentComposition.swift */; };
 		E7EDAC939EA9B334DD1F09A9 /* DeepSeekService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 22B16C76D73521F899F32AC4 /* DeepSeekService.swift */; };
-		EC82749EE309C29A7DE391C7 /* ContentOverlayView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4F9FC0DAE305F19D61BF3163 /* ContentOverlayView.swift */; };
-		ED9629AAF8FFD650514E0E02 /* CoreMLCropDetector.swift in Sources */ = {isa = PBXBuildFile; fileRef = D304E8D450F06B9D1562E880 /* CoreMLCropDetector.swift */; };
 		EEDD32360293ADACE8BC858F /* CameraManager+Session.swift in Sources */ = {isa = PBXBuildFile; fileRef = 32BDE0A313418B97E494DA37 /* CameraManager+Session.swift */; };
 		F0095E1DAC982E060D5815FB /* PhotoStorageService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 436E02DEEF57FA4B8A3AAFE2 /* PhotoStorageService.swift */; };
 		F3E23AB6AACFF0E2323B7366 /* UniformSmoother.swift in Sources */ = {isa = PBXBuildFile; fileRef = EA63617FD021B9B3231FD591 /* UniformSmoother.swift */; };
@@ -83,7 +91,6 @@
 		04B4979E1DDB74DCFB654003 /* DesignSystem.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesignSystem.swift; sourceTree = "<group>"; };
 		086D8BFD7A824FD355B92AF4 /* MockPhotographer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MockPhotographer.swift; sourceTree = "<group>"; };
 		1231EF4F908F165E79A34923 /* CompositionResult.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompositionResult.swift; sourceTree = "<group>"; };
-		134D05DA32411134C8B58B57 /* CompositionAdviceCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompositionAdviceCard.swift; sourceTree = "<group>"; };
 		1764634BAB8CA43EF093DCA4 /* CameraManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraManager.swift; sourceTree = "<group>"; };
 		22B16C76D73521F899F32AC4 /* DeepSeekService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeepSeekService.swift; sourceTree = "<group>"; };
 		2DD24AA80903675C46537163 /* AdacropStudentBBox.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AdacropStudentBBox.swift; sourceTree = "<group>"; };
@@ -92,13 +99,18 @@
 		436E02DEEF57FA4B8A3AAFE2 /* PhotoStorageService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoStorageService.swift; sourceTree = "<group>"; };
 		43C6BB08E2F5E10F67F6038B /* CameraManager+Photo.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "CameraManager+Photo.swift"; sourceTree = "<group>"; };
 		4EA9792F7A924DBDD83828B7 /* AestheticCropDetector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AestheticCropDetector.swift; sourceTree = "<group>"; };
-		4F9FC0DAE305F19D61BF3163 /* ContentOverlayView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentOverlayView.swift; sourceTree = "<group>"; };
 		52C830A9805577E9E9157C70 /* AdacropTeacherBBox.mlmodelc */ = {isa = PBXFileReference; lastKnownFileType = wrapper; path = AdacropTeacherBBox.mlmodelc; sourceTree = "<group>"; };
 		55B0AB09BC9E9627153D2598 /* ShareCardGenerator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShareCardGenerator.swift; sourceTree = "<group>"; };
 		59E2374320C1069976212848 /* AdacropTeacherActor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AdacropTeacherActor.swift; sourceTree = "<group>"; };
 		62B02AF7DC6DA2CF80FA03E4 /* ThumbnailGenerator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThumbnailGenerator.swift; sourceTree = "<group>"; };
 		676F069A0B112D0E3821775E /* AdacropTeacherBBox.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AdacropTeacherBBox.swift; sourceTree = "<group>"; };
 		D4C5B6A79880718293B4C5D6 /* ZoomDialView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ZoomDialView.swift; sourceTree = "<group>"; };
+		A1B2C3D4E5F60718293A4B82 /* SceneClassifier.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SceneClassifier.swift; sourceTree = "<group>"; };
+		A1B2C3D4E5F60718293A4BA2 /* CompositionPlan.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompositionPlan.swift; sourceTree = "<group>"; };
+		A1B2C3D4E5F60718293A4BB2 /* AdaCropPlanAdvisor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AdaCropPlanAdvisor.swift; sourceTree = "<group>"; };
+		A1B2C3D4E5F60718293A4C02 /* CompositionPlanGeneration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompositionPlanGeneration.swift; sourceTree = "<group>"; };
+		A1B2C3D4E5F60718293A4C12 /* CoordinateConverter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoordinateConverter.swift; sourceTree = "<group>"; };
+		A1B2C3D4E5F60718293A4B92 /* CompositionCoachOverlayView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompositionCoachOverlayView.swift; sourceTree = "<group>"; };
 		B3708D3A008D44DD9AD2D9EA /* ExposureControlView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExposureControlView.swift; sourceTree = "<group>"; };
 		3826DB0DD3154F9C95682F4B /* FocusControlView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FocusControlView.swift; sourceTree = "<group>"; };
 		24522BFD86FC4CD98081971A /* WhiteBalanceControlView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WhiteBalanceControlView.swift; sourceTree = "<group>"; };
@@ -111,6 +123,7 @@
 		8ECB68709A3F452D9524259F /* PhotographyStrategy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "PhotographyStrategy.swift"; sourceTree = "<group>"; };
 		30CA5A2D8C19414A8D6441E5 /* CameraControlEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "CameraControlEngine.swift"; sourceTree = "<group>"; };
 		E35CE4E3185445E7917EA611 /* CameraManager+Control.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "CameraManager+Control.swift"; sourceTree = "<group>"; };
+		2EA93EC88211D91587CED27D /* ExposureAnalyzer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExposureAnalyzer.swift; sourceTree = "<group>"; };
 		787BF2BF3049BB4C5CA161DB /* CropDetectionStrategy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CropDetectionStrategy.swift; sourceTree = "<group>"; };
 		7EA0B5DAEEF7F5546CD67F87 /* UserGuidanceView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UserGuidanceView.swift; sourceTree = "<group>"; };
 		81B6F53257371AAF9F5AD507 /* PhotoCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoCard.swift; sourceTree = "<group>"; };
@@ -121,7 +134,6 @@
 		A057592C402B5658B542D55F /* CameraPreviewSection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraPreviewSection.swift; sourceTree = "<group>"; };
 		A17C525FECAE9A442F66F46B /* CompositionEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompositionEngine.swift; sourceTree = "<group>"; };
 		A46DD46CCA69A9E9B340EFD8 /* CaptureButton.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CaptureButton.swift; sourceTree = "<group>"; };
-		A7E7A09F6FA9B9B08F6EDEB5 /* AIGuidanceOverlayView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIGuidanceOverlayView.swift; sourceTree = "<group>"; };
 		AE24A02F7D42B74327F1A0FB /* HomeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeView.swift; sourceTree = "<group>"; };
 		AEC4370BEA8C08E5915A5FDD /* HomeViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HomeViewModel.swift; sourceTree = "<group>"; };
 		AF1BF4596AC0314B2D812539 /* PhotographyAdvisor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotographyAdvisor.swift; sourceTree = "<group>"; };
@@ -131,14 +143,19 @@
 		BFD8C60BA9FF20D6B6FB2C15 /* HapticManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HapticManager.swift; sourceTree = "<group>"; };
 		C51C273EFE2FCA7E99089DE2 /* AIAdviceProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIAdviceProvider.swift; sourceTree = "<group>"; };
 		A1B2C3D4E5F60718293A4B62 /* KeychainStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainStore.swift; sourceTree = "<group>"; };
+		A1B2C3D4E5F60718293A4BC2 /* VisionAIService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VisionAIService.swift; sourceTree = "<group>"; };
+		A1B2C3D4E5F60718293A4C22 /* PhotoCritique.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoCritique.swift; sourceTree = "<group>"; };
+		873B2FA0BDB9814F6262E890 /* LocalPhotoCritiqueEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalPhotoCritiqueEngine.swift; sourceTree = "<group>"; };
+		C03C00C4C74E234DFF6BEF2C /* BlurDetector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BlurDetector.swift; sourceTree = "<group>"; };
+		A1B2C3D4E5F60718293A4C32 /* PhotoCritiqueSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoCritiqueSheet.swift; sourceTree = "<group>"; };
+		A1B2C3D4E5F60718293A4BD2 /* ImagePreparationService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImagePreparationService.swift; sourceTree = "<group>"; };
+		A1B2C3D4E5F60718293A4BE2 /* VisionTestSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VisionTestSheet.swift; sourceTree = "<group>"; };
 		A1B2C3D4E5F60718293A4B72 /* AIConfigurationStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AIConfigurationStore.swift; sourceTree = "<group>"; };
 		C5CA64456BF64897E46E2B70 /* PhotoRecord.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoRecord.swift; sourceTree = "<group>"; };
 		C8CE5C7C7AACD89E2CA8B364 /* MotionStabilityMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MotionStabilityMonitor.swift; sourceTree = "<group>"; };
 		C8E64A3ED63555404BA3EB16 /* APIKeyProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIKeyProvider.swift; sourceTree = "<group>"; };
 		C9F803395C651876539DF06D /* AdacropStudentActor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AdacropStudentActor.swift; sourceTree = "<group>"; };
 		CFAA264D47DAEF126F405FAA /* MainTabView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainTabView.swift; sourceTree = "<group>"; };
-		D04523131F073E508F3FBB20 /* DebugPanel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DebugPanel.swift; sourceTree = "<group>"; };
-		D304E8D450F06B9D1562E880 /* CoreMLCropDetector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoreMLCropDetector.swift; sourceTree = "<group>"; };
 		D49CD666BAA450CB5BDB35C8 /* TopControlBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TopControlBar.swift; sourceTree = "<group>"; };
 		D74DEF0D7FA31E3FF404E47E /* AdacropTeacherActor.mlmodelc */ = {isa = PBXFileReference; lastKnownFileType = wrapper; path = AdacropTeacherActor.mlmodelc; sourceTree = "<group>"; };
 		D78E363B3A65DEEEB467A32D /* FrameHeroApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FrameHeroApp.swift; sourceTree = "<group>"; };
@@ -147,7 +164,6 @@
 		E428BB2DE57D7436E29B4882 /* CompositionGuidanceEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompositionGuidanceEngine.swift; sourceTree = "<group>"; };
 		EA105CC0C9F46042D3D074E9 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
 		EA63617FD021B9B3231FD591 /* UniformSmoother.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UniformSmoother.swift; sourceTree = "<group>"; };
-		ECB368E90E4AE2C8E79AB2AA /* BoxCenterManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BoxCenterManager.swift; sourceTree = "<group>"; };
 		EE3210E639893C8BF3EB5294 /* FrameHero.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = FrameHero.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
@@ -237,6 +253,7 @@
 				30CA5A2D8C19414A8D6441E5 /* CameraControlEngine.swift */,
 				E35CE4E3185445E7917EA611 /* CameraManager+Control.swift */,
 				969825B03C08D499C1A87E1F /* CameraPreviewView.swift */,
+				2EA93EC88211D91587CED27D /* ExposureAnalyzer.swift */,
 			);
 			path = Camera;
 			sourceTree = "<group>";
@@ -245,6 +262,7 @@
 			isa = PBXGroup;
 			children = (
 				81B6F53257371AAF9F5AD507 /* PhotoCard.swift */,
+				A1B2C3D4E5F60718293A4C32 /* PhotoCritiqueSheet.swift */,
 			);
 			path = Components;
 			sourceTree = "<group>";
@@ -253,8 +271,6 @@
 			isa = PBXGroup;
 			children = (
 				4EA9792F7A924DBDD83828B7 /* AestheticCropDetector.swift */,
-				ECB368E90E4AE2C8E79AB2AA /* BoxCenterManager.swift */,
-				D304E8D450F06B9D1562E880 /* CoreMLCropDetector.swift */,
 				787BF2BF3049BB4C5CA161DB /* CropDetectionStrategy.swift */,
 			);
 			path = Detection;
@@ -294,11 +310,10 @@
 		584B0EFD6AA53B317686A97A /* Components */ = {
 			isa = PBXGroup;
 			children = (
-				A7E7A09F6FA9B9B08F6EDEB5 /* AIGuidanceOverlayView.swift */,
 				A057592C402B5658B542D55F /* CameraPreviewSection.swift */,
+				A1B2C3D4E5F60718293A4BE2 /* VisionTestSheet.swift */,
+				A1B2C3D4E5F60718293A4B92 /* CompositionCoachOverlayView.swift */,
 				A46DD46CCA69A9E9B340EFD8 /* CaptureButton.swift */,
-				134D05DA32411134C8B58B57 /* CompositionAdviceCard.swift */,
-				D04523131F073E508F3FBB20 /* DebugPanel.swift */,
 				D49CD666BAA450CB5BDB35C8 /* TopControlBar.swift */,
 				7EA0B5DAEEF7F5546CD67F87 /* UserGuidanceView.swift */,
 			);
@@ -394,6 +409,7 @@
 			children = (
 				C51C273EFE2FCA7E99089DE2 /* AIAdviceProvider.swift */,
 				A1B2C3D4E5F60718293A4B62 /* KeychainStore.swift */,
+				A1B2C3D4E5F60718293A4BF0 /* Vision */,
 				A1B2C3D4E5F60718293A4B72 /* AIConfigurationStore.swift */,
 				C8E64A3ED63555404BA3EB16 /* APIKeyProvider.swift */,
 				22B16C76D73521F899F32AC4 /* DeepSeekService.swift */,
@@ -424,6 +440,11 @@
 			children = (
 				A17C525FECAE9A442F66F46B /* CompositionEngine.swift */,
 				E428BB2DE57D7436E29B4882 /* CompositionGuidanceEngine.swift */,
+				A1B2C3D4E5F60718293A4B82 /* SceneClassifier.swift */,
+				A1B2C3D4E5F60718293A4BA2 /* CompositionPlan.swift */,
+				A1B2C3D4E5F60718293A4BB2 /* AdaCropPlanAdvisor.swift */,
+				A1B2C3D4E5F60718293A4C02 /* CompositionPlanGeneration.swift */,
+				A1B2C3D4E5F60718293A4C12 /* CoordinateConverter.swift */,
 				1231EF4F908F165E79A34923 /* CompositionResult.swift */,
 				6ED7214B4282E738BC2E0246 /* CompositionTarget.swift */,
 				DE49BAE56AE71B593F6F2CF9 /* CurrentComposition.swift */,
@@ -436,7 +457,6 @@
 			isa = PBXGroup;
 			children = (
 				42ED594226E429C4918967F3 /* CircleButton.swift */,
-				4F9FC0DAE305F19D61BF3163 /* ContentOverlayView.swift */,
 				D4C5B6A79880718293B4C5D6 /* ZoomDialView.swift */,
 				B3708D3A008D44DD9AD2D9EA /* ExposureControlView.swift */,
 				3826DB0DD3154F9C95682F4B /* FocusControlView.swift */,
@@ -498,6 +518,18 @@
 				C545D3585CB0AA2F04AA9151 /* ShareCard */,
 			);
 			path = Features;
+			sourceTree = "<group>";
+		};
+		A1B2C3D4E5F60718293A4BF0 /* Vision */ = {
+			isa = PBXGroup;
+			children = (
+				A1B2C3D4E5F60718293A4BC2 /* VisionAIService.swift */,
+				A1B2C3D4E5F60718293A4C22 /* PhotoCritique.swift */,
+				873B2FA0BDB9814F6262E890 /* LocalPhotoCritiqueEngine.swift */,
+				C03C00C4C74E234DFF6BEF2C /* BlurDetector.swift */,
+				A1B2C3D4E5F60718293A4BD2 /* ImagePreparationService.swift */,
+			);
+			path = Vision;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -572,15 +604,18 @@
 			files = (
 				517B50AEF40CF425B163EE70 /* AIAdviceProvider.swift in Sources */,
 				A1B2C3D4E5F60718293A4B61 /* KeychainStore.swift in Sources */,
+				A1B2C3D4E5F60718293A4BC1 /* VisionAIService.swift in Sources */,
+				A1B2C3D4E5F60718293A4C21 /* PhotoCritique.swift in Sources */,
+				18CEE738046FFB277DE87A39 /* LocalPhotoCritiqueEngine.swift in Sources */,
+				A9BEE4C7686AA6F2EA3241DB /* BlurDetector.swift in Sources */,
+				A1B2C3D4E5F60718293A4BD1 /* ImagePreparationService.swift in Sources */,
 				A1B2C3D4E5F60718293A4B71 /* AIConfigurationStore.swift in Sources */,
-				704F8F9B3D3EBD4DBB038146 /* AIGuidanceOverlayView.swift in Sources */,
 				829E184F5684EA8F80F17AF6 /* APIKeyProvider.swift in Sources */,
 				77705B6F48027E00CFDD486F /* AdacropStudentActor.swift in Sources */,
 				4CC5234A52AED9198D90AA11 /* AdacropStudentBBox.swift in Sources */,
 				5282479A64587F7E6992614C /* AdacropTeacherActor.swift in Sources */,
 				DBBC76524C7A05AFC3861DC7 /* AdacropTeacherBBox.swift in Sources */,
 				DCFBE98AD13D41B676BC37F8 /* AestheticCropDetector.swift in Sources */,
-				1B28DC3C40E538DCB9199193 /* BoxCenterManager.swift in Sources */,
 				340FBBFDD4895B51CE4D638B /* CameraManager+Models.swift in Sources */,
 				27006C734EC7504FEA26272B /* CameraManager+Photo.swift in Sources */,
 				EEDD32360293ADACE8BC858F /* CameraManager+Session.swift in Sources */,
@@ -591,23 +626,21 @@
 				F9B3E3B7367E4027BF800C66 /* PhotographyStrategy.swift in Sources */,
 				2B2D685CC7F144419100F8A2 /* CameraControlEngine.swift in Sources */,
 				34FA201F586E4487A6C64752 /* CameraManager+Control.swift in Sources */,
+				B45EFC60CC2EAC27174C703C /* ExposureAnalyzer.swift in Sources */,
 				8A745099E0430B2E483850B9 /* CameraManager.swift in Sources */,
 				8F2DC68816C41BD8179F0F69 /* CameraPreviewSection.swift in Sources */,
+				A1B2C3D4E5F60718293A4BE1 /* VisionTestSheet.swift in Sources */,
 				AF2C12C54622F87D69A5E534 /* CameraPreviewView.swift in Sources */,
 				65BE3406CA303E3C719B72CA /* CaptureButton.swift in Sources */,
 				DB5D7ABA4C18F8457AE19024 /* CaptureView.swift in Sources */,
 				4B73D11FED1F149931F18897 /* CaptureViewModel.swift in Sources */,
 				2D01FA5826A3A2AFF9821CFB /* CircleButton.swift in Sources */,
-				8B41F592F99389FC3EFD3E52 /* CompositionAdviceCard.swift in Sources */,
 				03A9AF27C3F9DDD07744750D /* CompositionEngine.swift in Sources */,
 				C92C4B88DF7E8ECCE5FA3B0D /* CompositionGuidanceEngine.swift in Sources */,
 				E347047DA74CC949F4D7A082 /* CompositionResult.swift in Sources */,
 				465D36A95503E8BEFD119F1F /* CompositionTarget.swift in Sources */,
-				EC82749EE309C29A7DE391C7 /* ContentOverlayView.swift in Sources */,
-				ED9629AAF8FFD650514E0E02 /* CoreMLCropDetector.swift in Sources */,
 				BB40A9A2D5D20F5838CE44A4 /* CropDetectionStrategy.swift in Sources */,
 				E79BFF8A4A64D38EAE546C2C /* CurrentComposition.swift in Sources */,
-				68F71A8FB44408505E260A82 /* DebugPanel.swift in Sources */,
 				E7EDAC939EA9B334DD1F09A9 /* DeepSeekService.swift in Sources */,
 				52C72D16B4AB3AD32A9E9F8B /* DesignSystem.swift in Sources */,
 				71B37DAA2A51178A6B4C538D /* GuidanceResult.swift in Sources */,
@@ -620,6 +653,7 @@
 				8497E7CD06F03F1FA1E5F672 /* MockPhotographer.swift in Sources */,
 				85737FFE28AB8BCD9C95DE3A /* MotionStabilityMonitor.swift in Sources */,
 				DB0C279523F1E2A07EF02767 /* PhotoCard.swift in Sources */,
+				A1B2C3D4E5F60718293A4C31 /* PhotoCritiqueSheet.swift in Sources */,
 				AD0581809DD233E88F537823 /* PhotoDetailView.swift in Sources */,
 				A74B46F4E7AE320A8D1E99B5 /* PhotoRecord.swift in Sources */,
 				F0095E1DAC982E060D5815FB /* PhotoStorageService.swift in Sources */,
@@ -631,6 +665,12 @@
 				F3E23AB6AACFF0E2323B7366 /* UniformSmoother.swift in Sources */,
 				6634261E83562EF0F1B1EACF /* UserGuidanceView.swift in Sources */,
 				A1B2C3D4E5F60718293A4B5C /* ZoomDialView.swift in Sources */,
+				A1B2C3D4E5F60718293A4B81 /* SceneClassifier.swift in Sources */,
+				A1B2C3D4E5F60718293A4BA1 /* CompositionPlan.swift in Sources */,
+				A1B2C3D4E5F60718293A4BB1 /* AdaCropPlanAdvisor.swift in Sources */,
+				A1B2C3D4E5F60718293A4C01 /* CompositionPlanGeneration.swift in Sources */,
+				A1B2C3D4E5F60718293A4C11 /* CoordinateConverter.swift in Sources */,
+				A1B2C3D4E5F60718293A4B91 /* CompositionCoachOverlayView.swift in Sources */,
 				E3A9BFBD9DAE4886A90ADEDA /* ExposureControlView.swift in Sources */,
 				1B30D0800780441C9658DEEB /* FocusControlView.swift in Sources */,
 				1CE5F0D25B704868BF3D642F /* WhiteBalanceControlView.swift in Sources */,

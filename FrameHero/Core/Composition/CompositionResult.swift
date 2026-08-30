@@ -283,6 +283,9 @@ struct CompositionResult {
     /// 检测到的人体数量
     var bodyCount: Int = 0
 
+    /// 多人时的群体包围盒（所有人体的并集，归一化 y 向上）；单人/无人为 nil
+    var groupBoundingBox: CGRect? = nil
+
     // MARK: - 构图判断
 
     /// 主体位置

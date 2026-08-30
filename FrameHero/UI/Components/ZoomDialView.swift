@@ -31,6 +31,8 @@ struct ZoomDialView: View {
     let presets: [CameraManager.ZoomPreset]
     let range: ClosedRange<CGFloat>
     let currentFactor: CGFloat
+    /// AI 场景推荐焦段（该槽位高亮提示），nil = 无推荐
+    var recommendedFactor: CGFloat? = nil
     /// 点按焦段按钮
     let onPresetTap: (CameraManager.ZoomPreset) -> Void
     /// 变焦盘拖动中的无级变焦
@@ -49,6 +51,12 @@ struct ZoomDialView: View {
     @State private var fingerX: CGFloat = 0
     @State private var lastSentFactor: CGFloat = 0
     @State private var lastSentTime = Date.distantPast
+    @State private var recommendPulse = false
+
+    /// 推荐焦段出现时启动呼吸提示
+    private func updateRecommendPulse() {
+        recommendPulse = (recommendedFactor != nil)
+    }
 
     // MARK: - 常量
 
@@ -110,6 +118,9 @@ struct ZoomDialView: View {
             .frame(width: pillWidth, height: pillHeight)
         }
         .position(x: width / 2, y: controlHeight / 2)
+        .animation(.easeInOut(duration: 0.7).repeatForever(autoreverses: true), value: recommendPulse)
+        .onAppear { updateRecommendPulse() }
+        .onChange(of: recommendedFactor) { _, _ in updateRecommendPulse() }
     }
 
     /// 胶囊槽位标签：整数倍贴齐时高亮该焦段；非整数倍率时最近槽位显示当前值
@@ -117,10 +128,15 @@ struct ZoomDialView: View {
         let isExact = abs(preset.zoomFactor - currentFactor) < 0.05
         let isNearest = nearestPresetToCurrent?.id == preset.id
         let isCurrentSlot = isExact || (isNearest && !isAtExactPreset)
+        // AI 场景推荐该焦段且当前不在该倍率 → 黄色高亮 + 呼吸提示
+        let isRecommended = recommendedFactor != nil
+            && abs(preset.zoomFactor - (recommendedFactor ?? 0)) < 0.05
+            && !isCurrentSlot
 
         return Text(isCurrentSlot && !isExact ? zoomText(currentFactor) : compactLabel(preset))
             .font(.system(size: isCurrentSlot ? 17 : 16, weight: .bold, design: .rounded))
-            .foregroundColor(isCurrentSlot ? .white : .white.opacity(0.75))
+            .foregroundColor(isCurrentSlot ? .white : (isRecommended ? .yellow : .white.opacity(0.75)))
+            .opacity(isRecommended ? (recommendPulse ? 1.0 : 0.45) : 1.0)
             .background(
                 Group {
                     if isCurrentSlot {
