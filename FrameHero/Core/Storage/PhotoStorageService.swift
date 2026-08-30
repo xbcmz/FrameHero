@@ -56,7 +56,7 @@ final class PhotoStorageService {
     }
 
     func savePhoto(data: Data, detectionMethod: String? = nil, compositionScore: Int? = nil,
-                    completion: ((UUID) -> Void)? = nil) {
+                    burstID: UUID? = nil, completion: ((UUID) -> Void)? = nil) {
         let id = UUID()
         let photoURL = photosDir.appendingPathComponent(PhotoRecord.photoFilename(for: id))
         let thumbURL = thumbnailsDir.appendingPathComponent(PhotoRecord.thumbnailFilename(for: id))
@@ -95,7 +95,8 @@ final class PhotoStorageService {
                                      detectionMethod: detectionMethod,
                                      iso: exif.iso, shutterSpeed: exif.shutter, aperture: exif.aperture,
                                      imageWidth: exif.width, imageHeight: exif.height,
-                                     compositionScore: compositionScore)
+                                     compositionScore: compositionScore,
+                                     burstID: burstID)
             self.records.insert(record, at: 0)
             self.persist()
             if let completion {
@@ -113,6 +114,37 @@ final class PhotoStorageService {
             self.records[index].critique = critique
             if self.records[index].compositionScore == nil {
                 self.records[index].compositionScore = critique.score
+            }
+            self.persist()
+        }
+    }
+
+    /// 记录本地清晰度预审结果（Laplacian 方差判糊），供图库角标和连拍优选使用
+    func updateBlurResult(_ isBlurry: Bool, for id: UUID) {
+        storageQueue.async { [weak self] in
+            guard let self else { return }
+            guard let index = self.records.firstIndex(where: { $0.id == id }) else { return }
+            self.records[index].isBlurry = isBlurry
+            self.persist()
+        }
+    }
+
+    /// 连拍结束后，从同一 burstID 分组里选出清晰度 + 构图/点评分数综合最优的一张打标。
+    /// 模糊的照片会被重量惩罚，没分数时默认均等权。
+    func markBurstBest(_ burstID: UUID) {
+        storageQueue.async { [weak self] in
+            guard let self else { return }
+            let indices = self.records.indices.filter { self.records[$0].burstID == burstID }
+            guard indices.count > 1 else { return }
+
+            func rank(_ record: PhotoRecord) -> Int {
+                let base = record.critique?.score ?? record.compositionScore ?? 50
+                return record.isBlurry == true ? base - 1000 : base
+            }
+
+            guard let bestIndex = indices.max(by: { rank(self.records[$0]) < rank(self.records[$1]) }) else { return }
+            for index in indices {
+                self.records[index].isBurstBest = (index == bestIndex)
             }
             self.persist()
         }

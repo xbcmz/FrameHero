@@ -138,6 +138,9 @@ final class CaptureViewModel: ObservableObject {
 	@Published var isAutoCaptureEnabled: Bool = true
 	@Published var captureDelay: Double = 1.0
 	@Published var isSwitchingCamera: Bool = false
+	/// 手动自拍倒计时时长（秒），0 = 关闭。选中后持续生效直到用户关闭，
+	/// 与原生相机 App 的定时器行为一致
+	@Published private(set) var selfTimerSeconds: Double = 0
 
 	// MARK: - 相机能力与环境
 
@@ -193,6 +196,33 @@ final class CaptureViewModel: ObservableObject {
 	/// 自动拍摄倒计时定时器（主线程 20Hz tick）
 	private var countdownTimer: DispatchSourceTimer?
 	private var countdownDeadline: Date?
+	/// 手动自拍倒计时定时器（与上面的 AI 自动拍摄共用 autoCaptureCountdown 这个
+	/// 发布属性驱动的倒计时环 UI，两者互斥，任何时刻只会有一个在跑）
+	private var selfTimerTimer: DispatchSourceTimer?
+	private var selfTimerDeadline: Date?
+
+	// MARK: - 连拍分组（供拍后本地评分优选最佳一张）
+	/// 与 camera.capturePhoto() 调用一一对应的 FIFO 队列：每次快门前 push，
+	/// onPhotoDataReady 回调时 pop，用于把异步返回的照片数据正确关联到拍摄时刻的 burstID
+	/// （nil 代表普通单张，非连拍）。不用读实时 currentBurstID 是因为拍照处理是异步的，
+	/// 直接读存在竞态风险（松手时最后一张还没处理完，currentBurstID 已被清空）。
+	private var pendingBurstIDs: [UUID?] = []
+	/// 当前连拍会话的分组 ID，nil = 没在连拍
+	private var currentBurstID: UUID?
+
+	/// 拍后清晰度预审提示（单张拍摄判糊时弹出，带重拍入口）
+	struct BlurWarning: Identifiable, Equatable {
+		let id: UUID
+	}
+	@Published private(set) var blurWarning: BlurWarning?
+
+	/// 实时曝光风险提示（与 AI 构图会话无关，纯净相机下也会检测）
+	@Published private(set) var exposureWarning: ExposureWarning?
+	/// 仅在 videoOutputQueue 上访问（节流用）
+	private var lastExposureCheckTime: Date = .distantPast
+	private let exposureCheckInterval: TimeInterval = 1.0
+	/// 仅在主线程访问：一键修复/手动关闭后短暂抑制提示重新弹出
+	private var exposureSuppressedUntil: Date = .distantPast
 
 	// MARK: - 姿态水平仪（P1：CoreMotion 姿态精细化引导）
 	/// 设备侧倾角（度，正=向右倾）；nil = 尚无数据
@@ -268,6 +298,8 @@ final class CaptureViewModel: ObservableObject {
 	func onDisappear() {
 		cancelAutoCapture()
 		suggestionDebounceWork?.cancel()
+		blurWarning = nil
+		exposureWarning = nil
 		motion.stop()
 		camera.stopSession()
 	}
@@ -280,7 +312,107 @@ final class CaptureViewModel: ObservableObject {
 	func capturePhoto() {
 		// 快照此刻的构图评分随照片入库（仅在 AI 会话中有值）
 		pendingCompositionScore = photographyAnalysis?.composition.score
+		pendingBurstIDs.append(nil)
 		camera.capturePhoto()
+	}
+
+	/// 长按连拍中的每一张：仍走普通快门管线，只是多打上同一个 burstID，
+	/// 供拍后统一评分优选最佳一张（见 finishBurst）
+	func captureBurstPhoto() {
+		if currentBurstID == nil { currentBurstID = UUID() }
+		pendingCompositionScore = photographyAnalysis?.composition.score
+		pendingBurstIDs.append(currentBurstID)
+		camera.capturePhoto()
+	}
+
+	/// 长按连拍松手：结束当前分组，稍等所有照片落盘后统一选出最佳一张
+	func finishBurst() {
+		guard let burstID = currentBurstID else { return }
+		currentBurstID = nil
+		// 1.5s 宽限：给最后一张的 AVCapturePhoto 处理+保存+模糊检测留够时间，
+		// 避免 markBurstBest 运行时漏掉还未落盘的照片
+		DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+			PhotoStorageService.shared.markBurstBest(burstID)
+		}
+	}
+
+	/// 重拍判糊的那张：删除该记录并重新拍一张
+	func retakeBlurredPhoto() {
+		guard let warning = blurWarning else { return }
+		blurWarning = nil
+		PhotoStorageService.shared.deleteRecord(warning.id)
+		HapticManager.shared.light()
+		capturePhoto()
+	}
+
+	func dismissBlurWarning() {
+		blurWarning = nil
+	}
+
+	/// 一键曝光补偿：过曝压暗、欠曝提亮，直接复用已有的 setExposureBias
+	func applyQuickExposureFix() {
+		guard let warning = exposureWarning else { return }
+		let delta: Float = warning == .overexposed ? -1.0 : 1.0
+		let base = photographyStrategy.exposureControl == .aiAuto
+			? cameraEnvironment.currentExposureBias
+			: photographyStrategy.manualExposureBias
+		setExposureBias(base + delta)
+		exposureWarning = nil
+		// 给用户看效果的时间，短时间内不重复弹同一个方向的提示
+		exposureSuppressedUntil = Date().addingTimeInterval(4.0)
+	}
+
+	func dismissExposureWarning() {
+		exposureWarning = nil
+		// 用户主动关闭，冷却更久，避免立刻又弹回来
+		exposureSuppressedUntil = Date().addingTimeInterval(6.0)
+	}
+
+	/// 设置手动自拍倒计时时长（0 = 关闭），只是记录偏好，真正的倒计时在按下快门时才开始
+	func setSelfTimer(_ seconds: Double) {
+		selfTimerSeconds = seconds
+		HapticManager.shared.selection()
+	}
+
+	/// 开始手动自拍倒计时（工具栏选了时长后，按下快门触发），
+	/// 复用与 AI 自动拍摄同一套 autoCaptureCountdown 倒计时环 UI
+	func startSelfTimer(seconds: Double) {
+		cancelAutoCapture()
+		HapticManager.shared.light()
+
+		let total = max(1, seconds)
+		selfTimerDeadline = Date().addingTimeInterval(total)
+		autoCaptureCountdown = (remain: total, total: total)
+		let totalSteps = Int(ceil(total))
+		var lastStep = totalSteps
+
+		let timer = DispatchSource.makeTimerSource(queue: .main)
+		timer.schedule(deadline: .now(), repeating: 0.05)
+		timer.setEventHandler { [weak self] in
+			guard let self, let deadline = self.selfTimerDeadline else { return }
+			let remain = deadline.timeIntervalSinceNow
+			self.autoCaptureCountdown = (remain: max(0, remain), total: total)
+
+			let step = Int(ceil(max(0, remain)))
+			if step != lastStep {
+				lastStep = step
+				if step > 0 {
+					HapticManager.shared.countdown(step: totalSteps - step + 1, total: totalSteps)
+				}
+			}
+
+			guard remain <= 0 else { return }
+			self.autoCaptureCountdown = nil
+			self.selfTimerTimer?.cancel()
+			self.selfTimerTimer = nil
+			self.selfTimerDeadline = nil
+			self.onCaptureTriggered?()
+			DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+				self.capturePhoto()
+			}
+		}
+		selfTimerTimer = timer
+		timer.resume()
 	}
 
 	func selectZoomPreset(_ preset: CameraManager.ZoomPreset) {
@@ -657,13 +789,66 @@ final class CaptureViewModel: ObservableObject {
 			self.handleSampleBuffer(sample)
 		}
 		camera.onPhotoDataReady = { [weak self] data in
+			// AVCapturePhotoOutput 的回调线程不保证是主线程，而 pendingBurstIDs/
+			// pendingCompositionScore 在 capturePhoto()/captureBurstPhoto() 里是在主线程
+			// 写入的，统一换到主线程才能避免跨线程读写同一个数组/标量。
+			DispatchQueue.main.async {
+				guard let self else { return }
+				let burstID = self.pendingBurstIDs.isEmpty ? nil : self.pendingBurstIDs.removeFirst()
+				let score = self.pendingCompositionScore
+				self.pendingCompositionScore = nil
+				PhotoStorageService.shared.savePhoto(
+					data: data,
+					detectionMethod: self.detectionMode.displayName,
+					compositionScore: score,
+					burstID: burstID
+				) { [weak self] id in
+					self?.runPostCaptureAnalysis(id: id, data: data, burstID: burstID)
+				}
+			}
+		}
+	}
+
+	/// 拍摄落盘后跑一次本地清晰度检测（Laplacian 方差）。
+	/// 单张拍摄且判定为模糊时弹出重拍提示；连拍中的每一张只记录结果，
+	/// 交给 finishBurst() 结束后统一挑最佳，不逐张打扰用户。
+	private func runPostCaptureAnalysis(id: UUID, data: Data, burstID: UUID?) {
+		DispatchQueue.global(qos: .utility).async { [weak self] in
+			guard let blurResult = BlurDetector.evaluate(jpegData: data) else { return }
+			PhotoStorageService.shared.updateBlurResult(blurResult.isBlurry, for: id)
+
+			guard burstID == nil, blurResult.isBlurry else { return }
+			DispatchQueue.main.async {
+				guard let self else { return }
+				self.blurWarning = BlurWarning(id: id)
+				HapticManager.shared.warning()
+				DispatchQueue.main.asyncAfter(deadline: .now() + 4.0) { [weak self] in
+					if self?.blurWarning?.id == id { self?.blurWarning = nil }
+				}
+			}
+		}
+	}
+
+	/// 曝光风险检测（与 AI 会话无关，1Hz 节流，直接读 Y 平面内存，开销可忽略）。
+	/// 注意线程约定：本函数总是在 videoOutputQueue 上调用，
+	/// lastExposureCheckTime 只在这里读写，不能在其他地方访问；
+	/// exposureWarning/photographyStrategy/exposureSuppressedUntil 都是 @Published 或主线程状态，
+	/// 统一改到 DispatchQueue.main.async 里才读写，避免与主线程的一键修复/关闭操作产生跨线程竞态。
+	private func checkExposureIfNeeded(_ pixelBuffer: CVPixelBuffer) {
+		let now = Date()
+		guard now.timeIntervalSince(lastExposureCheckTime) >= exposureCheckInterval else { return }
+		lastExposureCheckTime = now
+
+		let result = ExposureAnalyzer.evaluate(pixelBuffer)
+		DispatchQueue.main.async { [weak self] in
 			guard let self else { return }
-			PhotoStorageService.shared.savePhoto(
-				data: data,
-				detectionMethod: self.detectionMode.displayName,
-				compositionScore: self.pendingCompositionScore
-			)
-			self.pendingCompositionScore = nil
+			guard Date() >= self.exposureSuppressedUntil else { return }
+			// 手动/锁定曝光下用户已经自己在调，不打扰
+			guard self.photographyStrategy.exposureControl == .aiAuto else {
+				self.exposureWarning = nil
+				return
+			}
+			self.exposureWarning = result
 		}
 	}
 
@@ -687,6 +872,11 @@ final class CaptureViewModel: ObservableObject {
 			} else {
 				handler(nil)
 			}
+		}
+
+		// 曝光风险提示：不依赖 AI 构图会话，纯净相机下也能提示
+		if let pixelForExposure = CMSampleBufferGetImageBuffer(sample) {
+			checkExposureIfNeeded(pixelForExposure)
 		}
 
 		guard isCoachActive, coachPhase != .idle, coachPhase != .plans else { return }
@@ -1464,6 +1654,10 @@ final class CaptureViewModel: ObservableObject {
 		countdownTimer?.cancel()
 		countdownTimer = nil
 		countdownDeadline = nil
+		// 自拍倒计时与 AI 自动拍摄共用同一个倒计时环 UI 状态，任何一方被取消都应该把另一方一起清掉
+		selfTimerTimer?.cancel()
+		selfTimerTimer = nil
+		selfTimerDeadline = nil
 		autoCaptureCountdown = nil
 		autoCaptureWorkItem?.cancel()
 		autoCaptureWorkItem = nil

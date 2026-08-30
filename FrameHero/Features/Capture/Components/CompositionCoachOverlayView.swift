@@ -40,8 +40,6 @@ struct CompositionCoachOverlayView: View {
     let onCancelPlans: () -> Void
 
     // MARK: - 姿态/场景化（P1）
-    /// 设备侧倾角（度），nil = 无数据
-    let rollDegrees: Double?
     /// 引导元素样式（三分网格/中心十字/文档取景框）
     let guideStyle: CaptureViewModel.GuideStyle?
     /// 距离估算文案（人物方案），nil = 不显示
@@ -64,15 +62,6 @@ struct CompositionCoachOverlayView: View {
                 guideElements
                     .opacity(phase == .achieved ? 0.35 : 1.0)
                     .animation(.spring(response: 0.5, dampingFraction: 0.85), value: phase)
-
-                // 水平参考线：随设备侧倾旋转，倾斜过大时转黄提醒
-                if let roll = rollDegrees {
-                    Rectangle()
-                        .fill(abs(roll) > 2.5 ? Color.yellow.opacity(0.6) : Color.white.opacity(0.18))
-                        .frame(height: 1.5)
-                        .rotationEffect(.degrees(roll))
-                        .animation(.easeInOut(duration: 0.15), value: roll)
-                }
             }
 
             // 目标标记圈：AI 选定的构图位置，把主体放进去即变绿（最终指示）

@@ -35,6 +35,7 @@
 		A1B2C3D4E5F60718293A4BC1 /* VisionAIService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60718293A4BC2 /* VisionAIService.swift */; };
 		A1B2C3D4E5F60718293A4C21 /* PhotoCritique.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60718293A4C22 /* PhotoCritique.swift */; };
 		18CEE738046FFB277DE87A39 /* LocalPhotoCritiqueEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 873B2FA0BDB9814F6262E890 /* LocalPhotoCritiqueEngine.swift */; };
+		A9BEE4C7686AA6F2EA3241DB /* BlurDetector.swift in Sources */ = {isa = PBXBuildFile; fileRef = C03C00C4C74E234DFF6BEF2C /* BlurDetector.swift */; };
 		A1B2C3D4E5F60718293A4C31 /* PhotoCritiqueSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60718293A4C32 /* PhotoCritiqueSheet.swift */; };
 		A1B2C3D4E5F60718293A4BD1 /* ImagePreparationService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60718293A4BD2 /* ImagePreparationService.swift */; };
 		A1B2C3D4E5F60718293A4BE1 /* VisionTestSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60718293A4BE2 /* VisionTestSheet.swift */; };
@@ -62,6 +63,7 @@
 		F9B3E3B7367E4027BF800C66 /* PhotographyStrategy.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8ECB68709A3F452D9524259F /* PhotographyStrategy.swift */; };
 		2B2D685CC7F144419100F8A2 /* CameraControlEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 30CA5A2D8C19414A8D6441E5 /* CameraControlEngine.swift */; };
 		34FA201F586E4487A6C64752 /* CameraManager+Control.swift in Sources */ = {isa = PBXBuildFile; fileRef = E35CE4E3185445E7917EA611 /* CameraManager+Control.swift */; };
+		B45EFC60CC2EAC27174C703C /* ExposureAnalyzer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2EA93EC88211D91587CED27D /* ExposureAnalyzer.swift */; };
 		A74B46F4E7AE320A8D1E99B5 /* PhotoRecord.swift in Sources */ = {isa = PBXBuildFile; fileRef = C5CA64456BF64897E46E2B70 /* PhotoRecord.swift */; };
 		A8F94FF2C029899D5A591BBA /* FrameHeroApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = D78E363B3A65DEEEB467A32D /* FrameHeroApp.swift */; };
 		AD0581809DD233E88F537823 /* PhotoDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B830931CCF0BF9946BA3DEFC /* PhotoDetailView.swift */; };
@@ -121,6 +123,7 @@
 		8ECB68709A3F452D9524259F /* PhotographyStrategy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "PhotographyStrategy.swift"; sourceTree = "<group>"; };
 		30CA5A2D8C19414A8D6441E5 /* CameraControlEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "CameraControlEngine.swift"; sourceTree = "<group>"; };
 		E35CE4E3185445E7917EA611 /* CameraManager+Control.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "CameraManager+Control.swift"; sourceTree = "<group>"; };
+		2EA93EC88211D91587CED27D /* ExposureAnalyzer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExposureAnalyzer.swift; sourceTree = "<group>"; };
 		787BF2BF3049BB4C5CA161DB /* CropDetectionStrategy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CropDetectionStrategy.swift; sourceTree = "<group>"; };
 		7EA0B5DAEEF7F5546CD67F87 /* UserGuidanceView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UserGuidanceView.swift; sourceTree = "<group>"; };
 		81B6F53257371AAF9F5AD507 /* PhotoCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoCard.swift; sourceTree = "<group>"; };
@@ -143,6 +146,7 @@
 		A1B2C3D4E5F60718293A4BC2 /* VisionAIService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VisionAIService.swift; sourceTree = "<group>"; };
 		A1B2C3D4E5F60718293A4C22 /* PhotoCritique.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoCritique.swift; sourceTree = "<group>"; };
 		873B2FA0BDB9814F6262E890 /* LocalPhotoCritiqueEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalPhotoCritiqueEngine.swift; sourceTree = "<group>"; };
+		C03C00C4C74E234DFF6BEF2C /* BlurDetector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BlurDetector.swift; sourceTree = "<group>"; };
 		A1B2C3D4E5F60718293A4C32 /* PhotoCritiqueSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoCritiqueSheet.swift; sourceTree = "<group>"; };
 		A1B2C3D4E5F60718293A4BD2 /* ImagePreparationService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImagePreparationService.swift; sourceTree = "<group>"; };
 		A1B2C3D4E5F60718293A4BE2 /* VisionTestSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VisionTestSheet.swift; sourceTree = "<group>"; };
@@ -249,6 +253,7 @@
 				30CA5A2D8C19414A8D6441E5 /* CameraControlEngine.swift */,
 				E35CE4E3185445E7917EA611 /* CameraManager+Control.swift */,
 				969825B03C08D499C1A87E1F /* CameraPreviewView.swift */,
+				2EA93EC88211D91587CED27D /* ExposureAnalyzer.swift */,
 			);
 			path = Camera;
 			sourceTree = "<group>";
@@ -521,6 +526,7 @@
 				A1B2C3D4E5F60718293A4BC2 /* VisionAIService.swift */,
 				A1B2C3D4E5F60718293A4C22 /* PhotoCritique.swift */,
 				873B2FA0BDB9814F6262E890 /* LocalPhotoCritiqueEngine.swift */,
+				C03C00C4C74E234DFF6BEF2C /* BlurDetector.swift */,
 				A1B2C3D4E5F60718293A4BD2 /* ImagePreparationService.swift */,
 			);
 			path = Vision;
@@ -601,6 +607,7 @@
 				A1B2C3D4E5F60718293A4BC1 /* VisionAIService.swift in Sources */,
 				A1B2C3D4E5F60718293A4C21 /* PhotoCritique.swift in Sources */,
 				18CEE738046FFB277DE87A39 /* LocalPhotoCritiqueEngine.swift in Sources */,
+				A9BEE4C7686AA6F2EA3241DB /* BlurDetector.swift in Sources */,
 				A1B2C3D4E5F60718293A4BD1 /* ImagePreparationService.swift in Sources */,
 				A1B2C3D4E5F60718293A4B71 /* AIConfigurationStore.swift in Sources */,
 				829E184F5684EA8F80F17AF6 /* APIKeyProvider.swift in Sources */,
@@ -619,6 +626,7 @@
 				F9B3E3B7367E4027BF800C66 /* PhotographyStrategy.swift in Sources */,
 				2B2D685CC7F144419100F8A2 /* CameraControlEngine.swift in Sources */,
 				34FA201F586E4487A6C64752 /* CameraManager+Control.swift in Sources */,
+				B45EFC60CC2EAC27174C703C /* ExposureAnalyzer.swift in Sources */,
 				8A745099E0430B2E483850B9 /* CameraManager.swift in Sources */,
 				8F2DC68816C41BD8179F0F69 /* CameraPreviewSection.swift in Sources */,
 				A1B2C3D4E5F60718293A4BE1 /* VisionTestSheet.swift in Sources */,
