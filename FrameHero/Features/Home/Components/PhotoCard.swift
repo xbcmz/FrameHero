@@ -31,6 +31,17 @@ struct PhotoCard: View {
                         .padding(5)
                 }
             }
+            .overlay(alignment: .topTrailing) {
+                // 连拍优选标记：本地清晰度+评分综合选出的连拍组最佳一张
+                if record.isBurstBest == true {
+                    Image(systemName: "star.fill")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundColor(.white)
+                        .padding(5)
+                        .background(Circle().fill(Color.black.opacity(0.55)))
+                        .padding(5)
+                }
+            }
             .clipped()
             .onAppear {
                 guard thumbnail == nil else { return }

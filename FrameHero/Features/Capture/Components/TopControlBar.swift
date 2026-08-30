@@ -69,6 +69,9 @@ struct TopControlBar: View {
 	/// AI 视觉连通性测试入口（云端配置就绪时显示）
 	var showsVisionTest: Bool = false
 	var onVisionTest: (() -> Void)? = nil
+	/// 手动自拍倒计时当前时长（秒），0 = 关闭
+	var selfTimerSeconds: Double = 0
+	var onSetSelfTimer: ((Double) -> Void)? = nil
 
 	let onBack: () -> Void
 	let onToggleCamera: () -> Void
@@ -149,6 +152,29 @@ struct TopControlBar: View {
 						}
 					} label: {
 						Label("拍照延迟: \(String(format: "%.1f", captureDelay))秒", systemImage: "timer")
+					}
+
+					// 手动自拍倒计时（关/3秒/10秒），选中后持续生效直到手动关闭，
+					// 与 AI 自动拍摄的拍照延迟是两个独立开关（前者手动触发，后者构图达标自动触发）
+					Menu {
+						ForEach([0.0, 3.0, 10.0], id: \.self) { seconds in
+							Button {
+								HapticManager.shared.soft()
+								onSetSelfTimer?(seconds)
+							} label: {
+								HStack {
+									Text(seconds == 0 ? "关闭" : "\(Int(seconds))秒")
+									if abs(selfTimerSeconds - seconds) < 0.01 {
+										Image(systemName: "checkmark")
+									}
+								}
+							}
+						}
+					} label: {
+						Label(
+							selfTimerSeconds > 0 ? "自拍倒计时: \(Int(selfTimerSeconds))秒" : "自拍倒计时：关闭",
+							systemImage: "timer.circle"
+						)
 					}
 
 				} label: {

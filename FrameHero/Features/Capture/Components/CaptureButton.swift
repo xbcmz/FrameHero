@@ -51,6 +51,8 @@ struct CaptureButton: View {
 	var isAchieved: Bool = false
 	/// 长按连拍回调（nil = 不启用连拍）
 	var burstAction: (() -> Void)? = nil
+	/// 连拍结束（松手）回调，供上层统一评分优选连拍组照片
+	var onBurstEnded: (() -> Void)? = nil
 	let action: () -> Void
 
 	@State private var achievedPulse = false
@@ -141,10 +143,12 @@ struct CaptureButton: View {
 	}
 
 	private func stopBurst() {
-		if burstTimer != nil { burstEndedAt = Date() }
+		let wasBursting = burstTimer != nil
+		if wasBursting { burstEndedAt = Date() }
 		isBursting = false
 		burstTimer?.cancel()
 		burstTimer = nil
+		if wasBursting { onBurstEnded?() }
 	}
 
 }

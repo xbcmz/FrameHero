@@ -128,6 +128,20 @@ struct CaptureView: View {
 							.transition(.opacity.combined(with: .move(edge: .top)))
 					}
 
+					// 曝光风险提示：过曝/欠曝时提示，一键补偿
+					if let exposureWarning = viewModel.exposureWarning {
+						exposureWarningBanner(exposureWarning)
+							.padding(.top, 6)
+							.transition(.opacity.combined(with: .move(edge: .top)))
+					}
+
+					// 清晰度预审提示：单张拍摄判糊时提示重拍
+					if let blurWarning = viewModel.blurWarning {
+						blurWarningBanner(blurWarning)
+							.padding(.top, 6)
+							.transition(.opacity.combined(with: .move(edge: .top)))
+					}
+
 					Spacer()
 
 					bottomSection(bottomInset: max(safeInsets.bottom, 16))
@@ -168,6 +182,10 @@ struct CaptureView: View {
 			showsVisionTest: aiConfig.isCloudConfigured,
 			onVisionTest: {
 				showVisionTest = true
+			},
+			selfTimerSeconds: viewModel.selfTimerSeconds,
+			onSetSelfTimer: { seconds in
+				viewModel.setSelfTimer(seconds)
 			},
 			onBack: {
 				dismiss()
@@ -210,10 +228,17 @@ struct CaptureView: View {
 					},
 					isAchieved: viewModel.coachPhase == .achieved
 						&& viewModel.autoCaptureCountdown == nil,
-					burstAction: viewModel.isAICompositionEnabled ? { viewModel.capturePhoto() } : nil
+					burstAction: viewModel.isAICompositionEnabled ? { viewModel.captureBurstPhoto() } : nil,
+					onBurstEnded: { viewModel.finishBurst() }
 				) {
-					HapticManager.shared.capture()
-					viewModel.capturePhoto()
+					// 手动自拍倒计时选中且不在 AI 构图引导中时，单击先走倒计时，
+					// 避免与 AI 自动拍摄的触发时机打架
+					if viewModel.selfTimerSeconds > 0, viewModel.coachPhase == .idle {
+						viewModel.startSelfTimer(seconds: viewModel.selfTimerSeconds)
+					} else {
+						HapticManager.shared.capture()
+						viewModel.capturePhoto()
+					}
 				}
 
 				ZStack {
@@ -229,6 +254,73 @@ struct CaptureView: View {
 	}
 
 	/// AI 构图入口（Doka 式一次触发）
+	/// 曝光风险提示条：一键补偿 + 关闭
+	private func exposureWarningBanner(_ warning: ExposureWarning) -> some View {
+		HStack(spacing: 8) {
+			Image(systemName: warning == .overexposed ? "sun.max.fill" : "moon.fill")
+				.font(.system(size: 13))
+				.foregroundColor(.yellow)
+			Text(warning == .overexposed ? "画面过曝" : "画面偏暗，可能欠曝")
+				.font(.system(size: 12, weight: .medium))
+				.foregroundColor(.white)
+			Spacer(minLength: 8)
+			Button(warning == .overexposed ? "压暗" : "提亮") {
+				HapticManager.shared.light()
+				viewModel.applyQuickExposureFix()
+			}
+			.font(.system(size: 12, weight: .semibold))
+			.foregroundColor(.black)
+			.padding(.horizontal, 10)
+			.padding(.vertical, 4)
+			.background(Capsule().fill(Color.white.opacity(0.9)))
+
+			Button {
+				viewModel.dismissExposureWarning()
+			} label: {
+				Image(systemName: "xmark")
+					.font(.system(size: 10, weight: .bold))
+					.foregroundColor(.white.opacity(0.7))
+			}
+		}
+		.padding(.horizontal, 12)
+		.padding(.vertical, 8)
+		.background(Capsule().fill(Color.black.opacity(0.6)))
+		.padding(.horizontal, 20)
+	}
+
+	/// 清晰度预审提示条：可能拍糊了，一键重拍
+	private func blurWarningBanner(_ warning: CaptureViewModel.BlurWarning) -> some View {
+		HStack(spacing: 8) {
+			Image(systemName: "exclamationmark.triangle.fill")
+				.font(.system(size: 13))
+				.foregroundColor(.yellow)
+			Text("这张可能拍糊了")
+				.font(.system(size: 12, weight: .medium))
+				.foregroundColor(.white)
+			Spacer(minLength: 8)
+			Button("重拍") {
+				viewModel.retakeBlurredPhoto()
+			}
+			.font(.system(size: 12, weight: .semibold))
+			.foregroundColor(.black)
+			.padding(.horizontal, 10)
+			.padding(.vertical, 4)
+			.background(Capsule().fill(Color.white.opacity(0.9)))
+
+			Button {
+				viewModel.dismissBlurWarning()
+			} label: {
+				Image(systemName: "xmark")
+					.font(.system(size: 10, weight: .bold))
+					.foregroundColor(.white.opacity(0.7))
+			}
+		}
+		.padding(.horizontal, 12)
+		.padding(.vertical, 8)
+		.background(Capsule().fill(Color.black.opacity(0.6)))
+		.padding(.horizontal, 20)
+	}
+
 	private var aiCompositionButton: some View {
 		Button {
 			viewModel.toggleAIComposition()
