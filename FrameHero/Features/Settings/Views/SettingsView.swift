@@ -248,65 +248,72 @@ struct SettingsView: View {
 
     // MARK: 模型行
 
+    /// 模型行：标题一行、选择器一行、说明一行（垂直分层，
+    /// 标题与「V4 Flash Vision」这类长模型名不再争抢水平空间）
     private var modelRow: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            // 文本模型（云端文本能力：拍后点评等）
-            VStack(alignment: .leading, spacing: 6) {
-                HStack(spacing: 10) {
-                    Image(systemName: "text.bubble")
-                        .font(.system(size: 15))
-                        .foregroundColor(DesignSystem.Colors.primary)
-                        .frame(width: 24)
-                    Text("文本模型")
-                        .font(DesignSystem.Typography.headline)
-                        .foregroundColor(DesignSystem.Colors.textPrimary)
-                    Spacer()
-                    Picker("文本模型", selection: $aiConfig.model) {
-                        ForEach(AIConfigurationStore.availableModels, id: \.id) { info in
-                            Text(info.name).tag(info.id)
-                        }
+        VStack(alignment: .leading, spacing: 14) {
+            modelSubRow(
+                icon: "text.bubble",
+                title: "文本模型",
+                description: AIConfigurationStore.availableModels
+                    .first { $0.id == aiConfig.model }?.description ?? ""
+            ) {
+                Picker("文本模型", selection: $aiConfig.model) {
+                    ForEach(AIConfigurationStore.availableModels, id: \.id) { info in
+                        Text(info.name).tag(info.id)
                     }
-                    .pickerStyle(.menu)
                 }
-                Text(AIConfigurationStore.availableModels
-                    .first { $0.id == aiConfig.model }?.description ?? "")
-                    .font(DesignSystem.Typography.caption1)
-                    .foregroundColor(DesignSystem.Colors.textTertiary)
-                    .padding(.leading, 34)
+                .pickerStyle(.menu)
             }
 
             Divider()
                 .background(DesignSystem.Colors.backgroundTertiary)
 
-            // 视觉模型（图片理解：AI 视觉测试 / 未来构图方案）
-            VStack(alignment: .leading, spacing: 6) {
-                HStack(spacing: 10) {
-                    Image(systemName: "eye")
-                        .font(.system(size: 15))
-                        .foregroundColor(DesignSystem.Colors.primary)
-                        .frame(width: 24)
-                    Text("视觉模型")
-                        .font(DesignSystem.Typography.headline)
-                        .foregroundColor(DesignSystem.Colors.textPrimary)
-                    Spacer()
-                    Picker("视觉模型", selection: $aiConfig.visionModel) {
-                        ForEach(AIConfigurationStore.availableVisionModels, id: \.id) { info in
-                            Text(info.name).tag(info.id)
-                        }
+            modelSubRow(
+                icon: "eye",
+                title: "视觉模型",
+                description: AIConfigurationStore.availableVisionModels
+                    .first { $0.id == aiConfig.visionModel }?.description ?? ""
+            ) {
+                Picker("视觉模型", selection: $aiConfig.visionModel) {
+                    ForEach(AIConfigurationStore.availableVisionModels, id: \.id) { info in
+                        Text(info.name).tag(info.id)
                     }
-                    .pickerStyle(.menu)
                 }
-                Text(AIConfigurationStore.availableVisionModels
-                    .first { $0.id == aiConfig.visionModel }?.description ?? "")
-                    .font(DesignSystem.Typography.caption1)
-                    .foregroundColor(DesignSystem.Colors.textTertiary)
-                    .padding(.leading, 34)
+                .pickerStyle(.menu)
             }
         }
         .padding(.vertical, 14)
         .padding(.horizontal, DesignSystem.Spacing.medium)
         .disabled(!aiConfig.cloudAIEnabled)
         .opacity(aiConfig.cloudAIEnabled ? 1.0 : 0.4)
+    }
+
+    /// 单个模型子行：图标+标题 → 右对齐选择器 → 说明文字
+    private func modelSubRow<PickerContent: View>(icon: String, title: String,
+                                                  description: String,
+                                                  @ViewBuilder picker: () -> PickerContent) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 10) {
+                Image(systemName: icon)
+                    .font(.system(size: 15))
+                    .foregroundColor(DesignSystem.Colors.primary)
+                    .frame(width: 24)
+                Text(title)
+                    .font(DesignSystem.Typography.headline)
+                    .foregroundColor(DesignSystem.Colors.textPrimary)
+            }
+
+            HStack {
+                Spacer(minLength: 0)
+                picker()
+            }
+
+            Text(description)
+                .font(DesignSystem.Typography.caption1)
+                .foregroundColor(DesignSystem.Colors.textTertiary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
     }
 
     // MARK: 高级设置（API Key / 连接测试 / 接口地址）
