@@ -20,6 +20,8 @@ import AVFoundation
 /// 主拍摄界面
 struct CaptureView: View {
 	@StateObject private var viewModel: CaptureViewModel
+	@ObservedObject private var aiConfig = AIConfigurationStore.shared
+	@State private var showVisionTest = false
 
 	init(detectionMode: DetectionMode = .fast, isAutoCaptureEnabled: Bool = true, captureDelay: Double = 1.0) {
 		let vm = CaptureViewModel(detectionMode: detectionMode)
@@ -145,6 +147,12 @@ struct CaptureView: View {
 		.onDisappear {
 			viewModel.onDisappear()
 		}
+		.sheet(isPresented: $showVisionTest) {
+			VisionTestSheet(captureFrame: { handler in
+				viewModel.captureFrameForVision(completion: handler)
+			})
+			.preferredColorScheme(.dark)
+		}
 	}
 
 	// MARK: - UI Sections
@@ -154,6 +162,10 @@ struct CaptureView: View {
 			userGuidanceText: viewModel.userGuidanceText,
 			isAutoCaptureEnabled: viewModel.isAutoCaptureEnabled,
 			captureDelay: viewModel.captureDelay,
+			showsVisionTest: aiConfig.isCloudConfigured,
+			onVisionTest: {
+				showVisionTest = true
+			},
 			onBack: {
 				dismiss()
 			},

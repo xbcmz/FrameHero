@@ -71,6 +71,27 @@
 - **DetectionMode 设置重新有意义**：Vision=纯规则方案（不跑模型）、Fast=Student 模型校准、Pro=Teacher 模型校准
 - 新增 `PlanGeometry.mapThroughCrop`（主体在裁切区外返回 nil，带 0.06-0.94 边缘钳制）
 
+## 第十一批（dev 分支，2026-08-29：Phase 0——DeepSeek 视觉模型对接）
+
+> 依据用户《AI 构图拍照 MVP 开发方案》Phase 0 规范执行。新模型：DeepSeek-V4-Flash-Vision-Exp。
+
+### Phase 0.1 架构勘察结论（先勘察后动手）
+1. 现用模型：deepseek-chat / deepseek-reasoner（设置页可选）——均为纯文本模型
+2. API 格式：POST {baseURL}/chat/completions（OpenAI 兼容）
+3. 是否纯文本：是——messages[].content 为纯字符串
+4. 能否发图：不能——无多模态 content 数组、无 base64 通道
+5. API 层多模态支持：无（解析端也只认 String）
+6. 抽象可换模型：可以（Provider 协议体系健在），但视觉能力需独立新抽象
+结论：不动文本服务，按 Phase 0.2 建独立视觉抽象。
+
+### 实施
+- **Phase 0.2**：新增 `Core/AI/Vision/VisionAIService.swift`——`VisionAIService` 协议（图片+提示词→文本，传输层抽象，未来 Qwen-VL 等只需实现协议）+ `DeepSeekVisionService`（OpenAI 兼容多模态消息：content = [text, image_url(data URL base64)]）+ `SceneAnalysis`（scene/main_subject/description，稳健 JSON 解析容忍围栏）+ `VisionAIServiceFactory`
+- **Phase 0.3**：`VisionTestSheet`（拍摄页「···」菜单 → "AI 视觉连通性测试"，仅在云端配置就绪时显示）：自动取当前帧 → 发图 → 解析 → 展示 场景/主体/描述 + 失败原因；成功标准五项全部覆盖
+- **Phase 0.4**：`ImagePreparationService`——相机帧 → 方向校正 → 等比降采样(≤1024) → JPEG 0.65 → data URL（避免原帧 base64 数 MB 请求体）
+- **Phase 0.5**：`VisionAIConfiguration`——provider/model（deepseek-v4-flash-vision-exp）/baseURL/apiKey 集中管理，模型名零散硬编码为零；上层只依赖 VisionAIService 协议
+- VM 新增 `captureFrameForVision`（一次性取帧，不持有缓冲、不干扰 AI 会话状态机）；菜单入口仅云端配置就绪时出现
+- ⚠️ 待真机验证：exp 模型的模型 ID 字符串与多模态消息格式（当前按 OpenAI 兼容 text+image_url 实现；若平台要求其他字段，只需改 DeepSeekVisionService 一处）
+
 ## 版本基线与分支约定
 
 ## 项目位置与验证命令

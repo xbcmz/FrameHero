@@ -599,7 +599,28 @@ final class CaptureViewModel: ObservableObject {
 		}
 	}
 
+	/// 视觉连通性测试的一次性取帧回调
+	private var visionTestFrameHandler: ((Data?) -> Void)?
+
+	/// 捕获当前取景帧（预处理为 JPEG），供 AI 视觉测试发送
+	func captureFrameForVision(completion: @escaping (Data?) -> Void) {
+		visionTestFrameHandler = completion
+	}
+
 	private func handleSampleBuffer(_ sample: CMSampleBuffer) {
+		// 视觉测试按需取帧：不依赖 AI 会话状态，取完即交还缓冲
+		if let handler = visionTestFrameHandler {
+			visionTestFrameHandler = nil
+			if let pixel = CMSampleBufferGetImageBuffer(sample) {
+				handler(ImagePreparationService.prepareVisionPayload(
+					from: pixel,
+					orientation: pixelOrientation(for: pixel)
+				))
+			} else {
+				handler(nil)
+			}
+		}
+
 		guard isCoachActive, coachPhase != .idle, coachPhase != .plans else { return }
 		guard let pixel = CMSampleBufferGetImageBuffer(sample) else { return }
 		let orientation = pixelOrientation(for: pixel)

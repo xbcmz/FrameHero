@@ -66,6 +66,9 @@ struct TopControlBar: View {
 	let userGuidanceText: String
 	let isAutoCaptureEnabled: Bool
 	let captureDelay: Double
+	/// AI 视觉连通性测试入口（云端配置就绪时显示）
+	var showsVisionTest: Bool = false
+	var onVisionTest: (() -> Void)? = nil
 
 	let onBack: () -> Void
 	let onToggleCamera: () -> Void
@@ -91,6 +94,18 @@ struct TopControlBar: View {
 
 			// 右侧菜单按钮
 			Menu {
+				// AI 视觉连通性测试（配置了云端 Key 才显示）
+				if showsVisionTest {
+					Button {
+						HapticManager.shared.selection()
+						onVisionTest?()
+					} label: {
+						Label("AI 视觉连通性测试", systemImage: "eye.circle")
+					}
+
+					Divider()
+				}
+
 				// 相机设置部分
 				Menu {
 					Button {
