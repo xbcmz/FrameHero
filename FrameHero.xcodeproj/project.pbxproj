@@ -13,6 +13,7 @@
 		A1B2C3D4E5F60718293A4B5C /* ZoomDialView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D4C5B6A79880718293B4C5D6 /* ZoomDialView.swift */; };
 		A1B2C3D4E5F60718293A4B81 /* SceneClassifier.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60718293A4B82 /* SceneClassifier.swift */; };
 		A1B2C3D4E5F60718293A4BA1 /* CompositionPlan.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60718293A4BA2 /* CompositionPlan.swift */; };
+		A1B2C3D4E5F60718293A4BB1 /* AdaCropPlanAdvisor.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60718293A4BB2 /* AdaCropPlanAdvisor.swift */; };
 		A1B2C3D4E5F60718293A4B91 /* CompositionCoachOverlayView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60718293A4B92 /* CompositionCoachOverlayView.swift */; };
 		E3A9BFBD9DAE4886A90ADEDA /* ExposureControlView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B3708D3A008D44DD9AD2D9EA /* ExposureControlView.swift */; };
 		1B30D0800780441C9658DEEB /* FocusControlView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3826DB0DD3154F9C95682F4B /* FocusControlView.swift */; };
@@ -96,6 +97,7 @@
 		D4C5B6A79880718293B4C5D6 /* ZoomDialView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ZoomDialView.swift; sourceTree = "<group>"; };
 		A1B2C3D4E5F60718293A4B82 /* SceneClassifier.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SceneClassifier.swift; sourceTree = "<group>"; };
 		A1B2C3D4E5F60718293A4BA2 /* CompositionPlan.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompositionPlan.swift; sourceTree = "<group>"; };
+		A1B2C3D4E5F60718293A4BB2 /* AdaCropPlanAdvisor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AdaCropPlanAdvisor.swift; sourceTree = "<group>"; };
 		A1B2C3D4E5F60718293A4B92 /* CompositionCoachOverlayView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompositionCoachOverlayView.swift; sourceTree = "<group>"; };
 		B3708D3A008D44DD9AD2D9EA /* ExposureControlView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExposureControlView.swift; sourceTree = "<group>"; };
 		3826DB0DD3154F9C95682F4B /* FocusControlView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FocusControlView.swift; sourceTree = "<group>"; };
@@ -416,6 +418,7 @@
 				E428BB2DE57D7436E29B4882 /* CompositionGuidanceEngine.swift */,
 				A1B2C3D4E5F60718293A4B82 /* SceneClassifier.swift */,
 				A1B2C3D4E5F60718293A4BA2 /* CompositionPlan.swift */,
+				A1B2C3D4E5F60718293A4BB2 /* AdaCropPlanAdvisor.swift */,
 				1231EF4F908F165E79A34923 /* CompositionResult.swift */,
 				6ED7214B4282E738BC2E0246 /* CompositionTarget.swift */,
 				DE49BAE56AE71B593F6F2CF9 /* CurrentComposition.swift */,
@@ -618,6 +621,7 @@
 				A1B2C3D4E5F60718293A4B5C /* ZoomDialView.swift in Sources */,
 				A1B2C3D4E5F60718293A4B81 /* SceneClassifier.swift in Sources */,
 				A1B2C3D4E5F60718293A4BA1 /* CompositionPlan.swift in Sources */,
+				A1B2C3D4E5F60718293A4BB1 /* AdaCropPlanAdvisor.swift in Sources */,
 				A1B2C3D4E5F60718293A4B91 /* CompositionCoachOverlayView.swift in Sources */,
 				E3A9BFBD9DAE4886A90ADEDA /* ExposureControlView.swift in Sources */,
 				1B30D0800780441C9658DEEB /* FocusControlView.swift in Sources */,

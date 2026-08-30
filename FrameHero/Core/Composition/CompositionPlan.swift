@@ -92,8 +92,27 @@ struct CompositionPlan: Identifiable, Equatable {
     var tracking: PlanTracking
     /// 群像方案（跟踪群体包围盒而非单人）
     var isGroup: Bool = false
+    /// 目标位置待 AdaCrop 裁切区校准（首次显著性定位时计算）
+    var calibrateFromCrop: Bool = false
     /// 置信度 0~1
     var confidence: Double
+}
+
+// MARK: - 方案几何
+
+/// 方案目标的几何换算
+enum PlanGeometry {
+    /// 把全图坐标点映射进 AdaCrop 建议的最佳裁切区，
+    /// 得到"按模型的意思裁完后，主体应该落在画面哪个位置"。
+    /// 主体在裁切区外时返回 nil（上层回退规则位置）。
+    static func mapThroughCrop(_ point: CGPoint, crop: CGRect) -> CGPoint? {
+        guard crop.width > 0.05, crop.height > 0.05 else { return nil }
+        let x = (point.x - crop.minX) / crop.width
+        let y = (point.y - crop.minY) / crop.height
+        guard x > -0.02, x < 1.02, y > -0.02, y < 1.02 else { return nil }
+        return CGPoint(x: min(max(x, 0.06), 0.94),
+                       y: min(max(y, 0.06), 0.94))
+    }
 }
 
 // MARK: - 方案提供协议
@@ -111,7 +130,8 @@ protocol CompositionPlanProviding {
                        groupBox: CGRect?,
                        zoomFactor: CGFloat,
                        hasTelephoto: Bool,
-                       hasUltraWide: Bool) -> [CompositionPlan]
+                       hasUltraWide: Bool,
+                       cropHint: CGRect?) -> [CompositionPlan]
 }
 
 // MARK: - 本地启发式方案生成器（MVP 默认实现）
@@ -127,16 +147,25 @@ struct LocalHeuristicPlanProvider: CompositionPlanProviding {
                        groupBox: CGRect?,
                        zoomFactor: CGFloat,
                        hasTelephoto: Bool,
-                       hasUltraWide: Bool) -> [CompositionPlan] {
+                       hasUltraWide: Bool,
+                       cropHint: CGRect?) -> [CompositionPlan] {
         // 群像：两人及以上出合影方案
         if bodyCount >= 2, let groupBox {
             return groupPlans(groupBox: groupBox, personCount: bodyCount,
                               hasTelephoto: hasTelephoto, hasUltraWide: hasUltraWide)
         }
         if let person, person.detected {
-            return plansForPerson(person: person, hasTelephoto: hasTelephoto)
+            return plansForPerson(person: person, cropHint: cropHint, hasTelephoto: hasTelephoto)
         }
-        return plansForScene(scene, hasUltraWide: hasUltraWide)
+        var scenePlans = plansForScene(scene, hasUltraWide: hasUltraWide)
+        if cropHint != nil {
+            scenePlans = scenePlans.map { p in
+                var p = p
+                if p.tracking == .saliency { p.calibrateFromCrop = true }
+                return p
+            }
+        }
+        return scenePlans
     }
 
     /// 群像方案：以群体包围盒为跟踪对象
@@ -189,19 +218,28 @@ struct LocalHeuristicPlanProvider: CompositionPlanProviding {
 
     // MARK: 有人物：按人物占比分景别出方案
 
-    private func plansForPerson(person: PersonInfo, hasTelephoto: Bool) -> [CompositionPlan] {
+    private func plansForPerson(person: PersonInfo, cropHint: CGRect?, hasTelephoto: Bool) -> [CompositionPlan] {
         let height = person.heightRatio
         var plans: [CompositionPlan] = []
 
-        // 方案一：三分法 / 前视空间（尊重脸朝向选边，与目标锁定规则一致）
-        let thirdX = leadingRoomThirdX(for: person)
+        // 方案一：三分法 / 前视空间；AdaCrop 建议可用时用模型校准目标位置
+        let ruleX = leadingRoomThirdX(for: person)
+        var targetX = ruleX
+        var targetY = 0.46
+        if let crop = cropHint,
+           let mapped = PlanGeometry.mapThroughCrop(
+            CGPoint(x: person.centerX, y: person.centerY), crop: crop) {
+            // 人物在"理想裁切"中的落点（模型校准，仍落在三分区附近）
+            targetX = mapped.x
+            targetY = 1 - mapped.y
+        }
         plans.append(CompositionPlan(
             id: UUID(),
             title: "人物与环境",
             styleWord: "空间感",
             detail: "把人物放在三分点上，画面更透气",
             composition: height < 0.45 ? .environmentPortrait : .ruleOfThirds,
-            subjectTarget: CGPoint(x: thirdX, y: 0.46),
+            subjectTarget: CGPoint(x: targetX, y: targetY),
             distance: .keep,
             focalHint: nil,
             tracking: .person,
@@ -225,7 +263,7 @@ struct LocalHeuristicPlanProvider: CompositionPlanProviding {
         }
 
         // 方案三：留白（人物偏一侧，另一侧大面积留白）
-        let opposite: CGFloat = thirdX < 0.5 ? 2.0 / 3.0 : 1.0 / 3.0
+        let opposite: CGFloat = ruleX < 0.5 ? 2.0 / 3.0 : 1.0 / 3.0
         plans.append(CompositionPlan(
             id: UUID(),
             title: "大面积留白",

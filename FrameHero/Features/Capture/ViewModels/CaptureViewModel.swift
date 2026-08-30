@@ -72,6 +72,17 @@ final class CaptureViewModel: ObservableObject {
 	@Published private(set) var selectedPlanIndex: Int?
 	/// 方案生成器（MVP：本地启发式；后续可换 VLM 实现）
 	private let planProvider: CompositionPlanProviding = LocalHeuristicPlanProvider()
+	/// AdaCrop 参谋：方案生成时一次性预测最佳构图区（Vision 档位不启用）
+	private lazy var adaCropPlanAdvisor: AdaCropPlanAdvisor? = {
+		switch detectionMode {
+		case .fast: return AdaCropPlanAdvisor(mode: .fast)
+		case .pro: return AdaCropPlanAdvisor(mode: .pro)
+		case .vision: return nil
+		}
+	}()
+	private var adaCropRunning = false
+	/// 本会话的 AdaCrop 裁切区建议（显著性方案首帧校准用）
+	private var sessionCropHint: CGRect?
 	private var selectedPlan: CompositionPlan?
 	/// 方案分析开始时间（积累 ~0.9s 场景/主体证据后出方案）
 	private var planAnalysisStartedAt: Date?
@@ -290,6 +301,7 @@ final class CaptureViewModel: ObservableObject {
 		saliencyCenter = nil
 		saliencySize = nil
 		saliencySmoother.reset()
+		sessionCropHint = nil
 		coachSceneLabel = nil
 		coachGuidance = nil
 		compositionTarget = nil
@@ -460,6 +472,7 @@ final class CaptureViewModel: ObservableObject {
 			saliencyCenter = nil
 			saliencySize = nil
 			coachPhase = .analyzing
+			sessionCropHint = nil
 			coachSuggestion = "正在分析场景"
 			pendingFrameForAnalysis = true
 		}
@@ -622,11 +635,27 @@ final class CaptureViewModel: ObservableObject {
 		let zoom = zoomState.currentFactor
 		let focal = zoomState.focalLength
 
-		// 方案分析阶段：场景投票积累证据
+		// 方案分析阶段：场景投票积累证据；证据就绪后让 AdaCrop 参谋一次再出方案
 		if coachPhase == .analyzing {
 			sceneClassifier.classify(pixel, orientation: orientation) { [weak self] decision in
 				guard let self, let decision else { return }
 				self.applyScene(decision)
+			}
+
+			let elapsed = planAnalysisStartedAt.map { Date().timeIntervalSince($0) } ?? 0
+			if !planGenerationDone, photographyAnalysis != nil, elapsed >= 0.9, !adaCropRunning {
+				if let ada = adaCropPlanAdvisor {
+					adaCropRunning = true
+					ada.predictBestCrop(pixel, orientation: orientation) { [weak self] rect in
+						guard let self else { return }
+						self.adaCropRunning = false
+						self.sessionCropHint = rect
+						self.generatePlans()
+					}
+				} else {
+					generatePlans()
+				}
+				return
 			}
 		}
 
@@ -683,6 +712,16 @@ final class CaptureViewModel: ObservableObject {
 		guard let center = saliencyCenter else {
 			coachGuidance = nil
 			return
+		}
+		// 首次显著性定位时：用 AdaCrop 裁切区校准目标（模型认为的最佳落点）
+		if lockedTargetPoint == nil {
+			var target = CGPoint(x: plan.subjectTarget.x, y: 1 - plan.subjectTarget.y)
+			if plan.calibrateFromCrop, let crop = sessionCropHint,
+			   let mapped = PlanGeometry.mapThroughCrop(center, crop: crop) {
+				target = mapped
+			}
+			lockedTargetPoint = target
+			guidanceEngine.reset()
 		}
 		let size = saliencySize ?? CGSize(width: 0.3, height: 0.3)
 		let current = CurrentComposition(
@@ -789,12 +828,8 @@ final class CaptureViewModel: ObservableObject {
 	private func ingestAnalysis(_ result: PhotographyAnalysisResult) {
 		photographyAnalysis = result
 
-		// 方案分析阶段：积累 ~0.9s 证据后出方案
+		// 方案分析阶段：方案生成由 analyzeFrameNow 触发（AdaCrop 参谋完成后）
 		if coachPhase == .analyzing {
-			if !planGenerationDone, let started = planAnalysisStartedAt,
-			   Date().timeIntervalSince(started) >= 0.9 {
-				generatePlans()
-			}
 			return
 		}
 
@@ -931,14 +966,15 @@ final class CaptureViewModel: ObservableObject {
 			groupBox: composition?.groupBoundingBox,
 			zoomFactor: zoomState.currentFactor,
 			hasTelephoto: zoomPresets.contains { $0.lens == .telephoto },
-			hasUltraWide: zoomPresets.contains { $0.lens == .ultraWide }
+			hasUltraWide: zoomPresets.contains { $0.lens == .ultraWide },
+			cropHint: sessionCropHint
 		)
 		if plans.isEmpty {
 			// 兜底：至少给一个通用方案
 			plans = planProvider.generatePlans(
 				scene: .generic, person: nil, bodyCount: 0, groupBox: nil,
 				zoomFactor: zoomState.currentFactor,
-				hasTelephoto: false, hasUltraWide: false
+				hasTelephoto: false, hasUltraWide: false, cropHint: nil
 			)
 		}
 		coachGuidance = nil
