@@ -216,6 +216,8 @@ enum LocalPhotoCritiqueEngine {
 
 private extension Int {
     func clamped(to range: ClosedRange<Int>) -> Int {
-        min(max(self, range.lowerBound), range.upperBound)
+        // Int 扩展内需显式 Swift. 前缀：unqualified min/max 会被
+        // FixedWidthInteger 的静态属性 Int.min/Int.max 遮蔽
+        Swift.min(Swift.max(self, range.lowerBound), range.upperBound)
     }
 }
