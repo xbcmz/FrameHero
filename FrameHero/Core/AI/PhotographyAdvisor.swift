@@ -114,6 +114,9 @@ final class PhotographyAdvisor {
     /// 上次 AI 请求时间
     private var lastAIRequestTime: Date?
 
+    /// 上一帧主主体框（供构图引擎做主体连续性匹配）
+    private var lastMainSubjectBox: CGRect?
+
     // MARK: - 初始化
 
     init(
@@ -179,12 +182,24 @@ final class PhotographyAdvisor {
             var compositionResult = self.compositionEngine.analyze(
                 detections: rawDetections,
                 zoomFactor: zoomFactor,
-                focalLength: focalLength
+                focalLength: focalLength,
+                previousSubjectBox: self.lastMainSubjectBox
             )
 
             // 补充镜头信息
             compositionResult.currentZoomFactor = zoomFactor
             compositionResult.currentFocalLength = focalLength
+
+            // 记录本帧主主体框，供下帧做连续性匹配
+            if compositionResult.person.detected {
+                let p = compositionResult.person
+                self.lastMainSubjectBox = CGRect(x: p.centerX - p.widthRatio / 2,
+                                                 y: p.centerY - p.heightRatio / 2,
+                                                 width: p.widthRatio,
+                                                 height: p.heightRatio)
+            } else {
+                self.lastMainSubjectBox = nil
+            }
             
             // Step 2.5: 生成目标构图
             let target = self.compositionEngine.generateTarget(from: compositionResult)

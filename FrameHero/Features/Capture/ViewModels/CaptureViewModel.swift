@@ -816,6 +816,26 @@ final class CaptureViewModel: ObservableObject {
 
 	/// 人物跟踪方案的一次引导更新
 	private func ingestPersonTracking(_ result: PhotographyAnalysisResult, plan: CompositionPlan) {
+		// 群像方案：以群体包围盒为"当前主体"（并集中心/高度）
+		if plan.isGroup, let group = result.composition.groupBoundingBox {
+			let current = CurrentComposition(
+				subjectCenterX: group.midX,
+				subjectCenterY: group.midY,
+				subjectWidthRatio: group.width,
+				subjectHeightRatio: group.height,
+				faceCenterX: nil,
+				faceCenterY: nil,
+				headRoomRatio: 0,
+				minEdgeDistance: 0,
+				isSubjectComplete: true,
+				overallScore: result.composition.score,
+				subjectPosition: result.composition.subjectPosition
+			)
+			applyGuidance(current: current,
+						  target: planTarget(for: plan, currentHeight: group.height))
+			return
+		}
+
 		let person = result.composition.person
 		guard person.detected else {
 			coachGuidance = nil
@@ -903,9 +923,12 @@ final class CaptureViewModel: ObservableObject {
 		planGenerationDone = true
 		let scene = currentScene ?? .generic
 		let person = photographyAnalysis?.composition.person
+		let composition = photographyAnalysis?.composition
 		var plans = planProvider.generatePlans(
 			scene: scene,
 			person: person,
+			bodyCount: composition?.bodyCount ?? 0,
+			groupBox: composition?.groupBoundingBox,
 			zoomFactor: zoomState.currentFactor,
 			hasTelephoto: zoomPresets.contains { $0.lens == .telephoto },
 			hasUltraWide: zoomPresets.contains { $0.lens == .ultraWide }
@@ -913,7 +936,7 @@ final class CaptureViewModel: ObservableObject {
 		if plans.isEmpty {
 			// 兜底：至少给一个通用方案
 			plans = planProvider.generatePlans(
-				scene: .generic, person: nil,
+				scene: .generic, person: nil, bodyCount: 0, groupBox: nil,
 				zoomFactor: zoomState.currentFactor,
 				hasTelephoto: false, hasUltraWide: false
 			)

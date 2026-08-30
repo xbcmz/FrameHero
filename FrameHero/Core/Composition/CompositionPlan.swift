@@ -90,6 +90,8 @@ struct CompositionPlan: Identifiable, Equatable {
     var focalHint: String?
     /// 实时跟踪方式
     var tracking: PlanTracking
+    /// 群像方案（跟踪群体包围盒而非单人）
+    var isGroup: Bool = false
     /// 置信度 0~1
     var confidence: Double
 }
@@ -100,8 +102,13 @@ struct CompositionPlan: Identifiable, Equatable {
 /// 实时跟踪不在此协议内——方案确定后，跟踪/完成判断全部本地执行。
 protocol CompositionPlanProviding {
     /// 基于一次场景快照生成 1~3 个构图方案（按推荐度排序）
+    /// - Parameters:
+    ///   - bodyCount: 画面中的人体数量（>=2 出群像方案）
+    ///   - groupBox: 群体包围盒（所有人体的并集，y 向上）
     func generatePlans(scene: SceneClassifier.SceneKind,
                        person: PersonInfo?,
+                       bodyCount: Int,
+                       groupBox: CGRect?,
                        zoomFactor: CGFloat,
                        hasTelephoto: Bool,
                        hasUltraWide: Bool) -> [CompositionPlan]
@@ -116,13 +123,68 @@ struct LocalHeuristicPlanProvider: CompositionPlanProviding {
 
     func generatePlans(scene: SceneClassifier.SceneKind,
                        person: PersonInfo?,
+                       bodyCount: Int,
+                       groupBox: CGRect?,
                        zoomFactor: CGFloat,
                        hasTelephoto: Bool,
                        hasUltraWide: Bool) -> [CompositionPlan] {
+        // 群像：两人及以上出合影方案
+        if bodyCount >= 2, let groupBox {
+            return groupPlans(groupBox: groupBox, personCount: bodyCount,
+                              hasTelephoto: hasTelephoto, hasUltraWide: hasUltraWide)
+        }
         if let person, person.detected {
             return plansForPerson(person: person, hasTelephoto: hasTelephoto)
         }
         return plansForScene(scene, hasUltraWide: hasUltraWide)
+    }
+
+    /// 群像方案：以群体包围盒为跟踪对象
+    private func groupPlans(groupBox: CGRect, personCount: Int,
+                            hasTelephoto: Bool, hasUltraWide: Bool) -> [CompositionPlan] {
+        // 群体包围盒 y 向上 → 方案 y 从顶部计
+        let centerY = 1 - groupBox.midY
+        return [
+            CompositionPlan(
+                id: UUID(),
+                title: "居中合影",
+                styleWord: "圆满",
+                detail: "让 \(personCount) 个人都站进画面中心",
+                composition: .centerSymmetry,
+                subjectTarget: CGPoint(x: 0.5, y: centerY),
+                distance: .keep,
+                focalHint: nil,
+                tracking: .person,
+                isGroup: true,
+                confidence: 0.9
+            ),
+            CompositionPlan(
+                id: UUID(),
+                title: "全员全景",
+                styleWord: "空间感",
+                detail: "退后一步，全员与环境同框",
+                composition: .environmentPortrait,
+                subjectTarget: CGPoint(x: 0.5, y: centerY),
+                distance: .farther,
+                focalHint: hasUltraWide ? "0.5x" : nil,
+                tracking: .person,
+                isGroup: true,
+                confidence: 0.8
+            ),
+            CompositionPlan(
+                id: UUID(),
+                title: "前排特写",
+                styleWord: "突出表情",
+                detail: "靠近前排，后排自然虚化",
+                composition: .centerSymmetry,
+                subjectTarget: CGPoint(x: 0.5, y: 0.44),
+                distance: .closer,
+                focalHint: hasTelephoto ? "2x" : nil,
+                tracking: .person,
+                isGroup: true,
+                confidence: 0.72
+            ),
+        ]
     }
 
     // MARK: 有人物：按人物占比分景别出方案
