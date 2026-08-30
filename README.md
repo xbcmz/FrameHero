@@ -227,10 +227,10 @@ A: Inside the app sandbox (Application Support), not the system library. Export 
 - [x] **Phase 6–8** — pro control panel refactor / zoom dial / AI composition session paradigm
 - [x] **Phase 9** — AI Photographer MVP: scene recognition → composition plans → live guidance
 - [x] **Phase 10** — group awareness / subject continuity / AdaCrop engine tiers
-- [ ] **Post-shot review** — DeepSeek / vision-LLM single-photo & daily batch critique
-- [ ] **VLM plan provider** — scene-aware plans from a vision-language model
+- [x] **Post-shot review** — DeepSeek Vision structured critique (score / strengths / improvements)
+- [x] **VLM plan provider** — scene-aware plans from DeepSeek Vision
 - [ ] **ARKit pose** — finer guidance (level / pitch)
-- [ ] **Auto focal switch** — one-tap execution of plan focal suggestions
+- [x] **Auto focal switch** — plan focal suggestions execute on selection
 
 ## Contributing
 

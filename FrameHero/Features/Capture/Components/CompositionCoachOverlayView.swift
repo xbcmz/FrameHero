@@ -283,6 +283,13 @@ struct CompositionCoachOverlayView: View {
                 .font(.system(size: 14, weight: .medium))
                 .foregroundColor(.white)
                 .lineLimit(1)
+
+            // 引导进度（调整中显示匹配百分比，增强"在收敛"的感知）
+            if phase == .guiding, let guidance, guidance.state == .adjusting {
+                Text("\(Int(guidance.progress * 100))%")
+                    .font(.system(size: 11, weight: .bold, design: .rounded))
+                    .foregroundColor(.white.opacity(0.65))
+            }
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)

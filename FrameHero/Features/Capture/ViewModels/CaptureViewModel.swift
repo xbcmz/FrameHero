@@ -1112,9 +1112,13 @@ final class CaptureViewModel: ObservableObject {
 		saliencySmoother.reset()
 		saliencyCenter = nil
 
-		// 焦段建议 → 变焦盘高亮（P1 的自动切换先不做，只提示）
+		// 焦段建议：自动执行（P1 auto lens switching）+ 变焦盘高亮同步
 		if let hint = plan.focalHint, let factor = Self.parseFocalHint(hint) {
 			sceneRecommendedFactor = factor
+			if let preset = zoomPresets.first(where: { abs($0.zoomFactor - factor) < 0.05 }),
+			   abs(preset.zoomFactor - zoomState.currentFactor) > 0.05 {
+				camera.selectZoomPreset(preset)
+			}
 		} else {
 			sceneRecommendedFactor = nil
 		}
