@@ -34,6 +34,7 @@
 		A1B2C3D4E5F60718293A4B61 /* KeychainStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60718293A4B62 /* KeychainStore.swift */; };
 		A1B2C3D4E5F60718293A4BC1 /* VisionAIService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60718293A4BC2 /* VisionAIService.swift */; };
 		A1B2C3D4E5F60718293A4C21 /* PhotoCritique.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60718293A4C22 /* PhotoCritique.swift */; };
+		18CEE738046FFB277DE87A39 /* LocalPhotoCritiqueEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 873B2FA0BDB9814F6262E890 /* LocalPhotoCritiqueEngine.swift */; };
 		A1B2C3D4E5F60718293A4C31 /* PhotoCritiqueSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60718293A4C32 /* PhotoCritiqueSheet.swift */; };
 		A1B2C3D4E5F60718293A4BD1 /* ImagePreparationService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60718293A4BD2 /* ImagePreparationService.swift */; };
 		A1B2C3D4E5F60718293A4BE1 /* VisionTestSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60718293A4BE2 /* VisionTestSheet.swift */; };
@@ -141,6 +142,7 @@
 		A1B2C3D4E5F60718293A4B62 /* KeychainStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainStore.swift; sourceTree = "<group>"; };
 		A1B2C3D4E5F60718293A4BC2 /* VisionAIService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VisionAIService.swift; sourceTree = "<group>"; };
 		A1B2C3D4E5F60718293A4C22 /* PhotoCritique.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoCritique.swift; sourceTree = "<group>"; };
+		873B2FA0BDB9814F6262E890 /* LocalPhotoCritiqueEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalPhotoCritiqueEngine.swift; sourceTree = "<group>"; };
 		A1B2C3D4E5F60718293A4C32 /* PhotoCritiqueSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoCritiqueSheet.swift; sourceTree = "<group>"; };
 		A1B2C3D4E5F60718293A4BD2 /* ImagePreparationService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImagePreparationService.swift; sourceTree = "<group>"; };
 		A1B2C3D4E5F60718293A4BE2 /* VisionTestSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VisionTestSheet.swift; sourceTree = "<group>"; };
@@ -518,6 +520,7 @@
 			children = (
 				A1B2C3D4E5F60718293A4BC2 /* VisionAIService.swift */,
 				A1B2C3D4E5F60718293A4C22 /* PhotoCritique.swift */,
+				873B2FA0BDB9814F6262E890 /* LocalPhotoCritiqueEngine.swift */,
 				A1B2C3D4E5F60718293A4BD2 /* ImagePreparationService.swift */,
 			);
 			path = Vision;
@@ -597,6 +600,7 @@
 				A1B2C3D4E5F60718293A4B61 /* KeychainStore.swift in Sources */,
 				A1B2C3D4E5F60718293A4BC1 /* VisionAIService.swift in Sources */,
 				A1B2C3D4E5F60718293A4C21 /* PhotoCritique.swift in Sources */,
+				18CEE738046FFB277DE87A39 /* LocalPhotoCritiqueEngine.swift in Sources */,
 				A1B2C3D4E5F60718293A4BD1 /* ImagePreparationService.swift in Sources */,
 				A1B2C3D4E5F60718293A4B71 /* AIConfigurationStore.swift in Sources */,
 				829E184F5684EA8F80F17AF6 /* APIKeyProvider.swift in Sources */,
