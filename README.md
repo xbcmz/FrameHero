@@ -108,6 +108,24 @@ Each parameter has an independent three-state switch: **AI Auto ✨ / Manual �
 
 > A cloud LLM (DeepSeek) **never runs in the realtime loop** — per-frame requests are slow, costly, and unreadable while shooting. It is reserved for "post-shot review" (on the roadmap), pluggable via the `CompositionPlanProviding` / `AIAdviceProvider` protocols — swapping in any vision model only replaces the implementation.
 
+## Key Technical Implementations
+
+### Composition plan generation
+- **Local heuristic** (`CompositionPlan.LocalHeuristicPlanProvider`): pure rule-based plans from scene kind + person/face geometry, zero latency, always available.
+- **Cloud plans** (`CompositionPlanGeneration.swift`): DeepSeek Vision returns one structured JSON payload (`scene` / `main_subject` / `plans[]`, each plan carrying `subject_target`, `camera_action.{horizontal,vertical,distance}`, `focal_length`) once per AI-composition session; `CompositionPlanMapper` maps it into local `CompositionPlan` models. Parsing/mapping are pure, stateless functions (`static func`), independent of `CaptureViewModel`'s retry/fallback orchestration — easy to unit test without mocking the network layer.
+- **AdaCrop calibration**: `AdaCropPlanAdvisor` runs the Fast/Pro CoreML model once per session to predict the "best-composition crop"; `PlanGeometry.mapThroughCrop` remaps the plan's subject target into that crop, refining "where exactly to put the subject" beyond pure rule-of-thumb positions.
+
+### Pose level (attitude horizon)
+`MotionStabilityMonitor.attitude.roll` (CoreMotion device-motion) drives a live horizon-line overlay and tilt coaching text in `CaptureView`/`CaptureViewModel` (`cameraRollDegrees`, throttled to ~6.7fps to avoid excess SwiftUI re-render).
+
+### Distance estimation
+`CaptureViewModel.distanceEstimateText` buckets `person.heightRatio × zoomState.currentFactor` (subject's on-screen height ratio scaled by current zoom) into coarse "~5m / 3-5m / 2m / 1m / <0.5m" hints — a cheap, model-free heuristic that only needs the person bounding box already produced by the tracking pipeline. Combined with the AI plan's `camera_action.distance` (`closer`/`keep`/`farther`), this is what drives "move closer / step back" guidance.
+
+### Concurrency model
+Every background worker owns exactly one serial queue and a **queue-confined mirror** of any state it needs to branch on internally; `@Published` properties are write-only outputs towards the main thread and must never be read back from a background queue (async main writes race with background reads). This project-wide rule was formalized after fixing two real races:
+- `MotionStabilityMonitor`: hysteresis must branch on the internal `stableState` mirror (mutated only on `dataQueue`), not the `@Published isStable` (mutated only on main); `largeMotionFlag`'s delayed reset was moved from `DispatchQueue.main.asyncAfter` back onto `dataQueue` for the same reason.
+- `SceneClassifier`: `classify()` runs on the camera's `videoOutputQueue`, while `reset()` is triggered by main-thread UI actions; both now go through a dedicated `stateQueue` to serialize access to `votes`/`currentDecision`.
+
 ## Project Layout
 
 ```text
@@ -139,8 +157,8 @@ FrameHero/
 │   │   ├── CompositionGuidanceEngine.swift # Deviation → direction/progress/done
 │   │   └── ...(result/target/guidance models)
 │   ├── Detection/
-│   │   ├── CropDetectionStrategy.swift     # Detection mode definitions
-│   │   └── AestheticCropDetector.swift     # Vision faces/bodies/saliency
+│   │   ├── CropDetectionStrategy.swift     # Detection mode enum (Vision/Fast/Pro)
+│   │   └── AestheticCropDetector.swift     # Vision face/body raw detections (feeds CompositionEngine)
 │   ├── Models/                             # AdaCrop CoreML models (student/teacher)
 │   ├── Motion/MotionStabilityMonitor.swift # Gyro stability
 │   └── Storage/                            # Photo store (score saved per shot)
@@ -234,7 +252,7 @@ A: Inside the app sandbox (Application Support), not the system library. Export 
 
 ## Contributing
 
-Issues and PRs welcome. Please keep: SwiftUI + MVVM, camera operations on `sessionQueue`, no secrets in code, and a purpose header comment per file.
+Issues and PRs welcome. Please keep: SwiftUI + MVVM, camera operations on `sessionQueue`, a purpose header comment per file, no secrets in code, and — for any new background worker — never read a `@Published` property from that worker's own queue; keep a queue-confined mirror instead (see *Concurrency model* above).
 
 ## License
 

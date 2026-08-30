@@ -78,12 +78,17 @@ final class SceneClassifier {
     /// 场景结论切换滞回：新场景票数需超过当前场景票数的该比例才切换
     private let switchHysteresis: Float = 1.5
 
-    // MARK: - 状态（analysisQueue 上访问）
+    // MARK: - 状态
 
-    /// 滑动投票窗口：(场景, 时间戳)
+    /// votes / currentDecision 专属串行队列：
+    /// classify() 跑在相机帧回调的 videoOutputQueue 上，reset() 由主线程 UI 操作触发，
+    /// 两者必须通过同一条队列互斥，否则对 votes/currentDecision 的并发读写是数据竞争。
+    private let stateQueue = DispatchQueue(label: "framehero.sceneclassifier.state")
+
+    /// 滑动投票窗口：(场景, 时间戳)，仅在 stateQueue 上读写
     private var votes: [(kind: SceneKind, time: TimeInterval)] = []
-    /// 当前稳定结论（滞回锚点）
-    private(set) var currentDecision: Decision?
+    /// 当前稳定结论（滞回锚点），仅在 stateQueue 上读写
+    private var currentDecision: Decision?
 
     // MARK: - 识别
 
@@ -99,7 +104,7 @@ final class SceneClassifier {
                 DispatchQueue.main.async { completion(nil) }
                 return
             }
-            let decision = self.accumulate(observations: observations)
+            let decision = self.stateQueue.sync { self.accumulate(observations: observations) }
             DispatchQueue.main.async { completion(decision) }
         }
         let handler = VNImageRequestHandler(cvPixelBuffer: pixelBuffer, orientation: orientation, options: [:])
@@ -110,10 +115,12 @@ final class SceneClassifier {
         }
     }
 
-    /// 会话重置（重新开始一轮识别）
+    /// 会话重置（重新开始一轮识别），可能从主线程调用，必须与 classify() 互斥
     func reset() {
-        votes.removeAll()
-        currentDecision = nil
+        stateQueue.sync {
+            votes.removeAll()
+            currentDecision = nil
+        }
     }
 
     // MARK: - 投票
