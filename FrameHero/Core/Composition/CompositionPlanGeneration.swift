@@ -90,12 +90,14 @@ struct CompositionPlanResponse: Codable {
         var description: String?
         var composition: String?
         var subjectTarget: SubjectTarget?
+        var cameraAction: CameraAction?
         var focalLength: String?
         var instruction: String?
 
         enum CodingKeys: String, CodingKey {
             case id, title, style, description, composition
             case subjectTarget = "subject_target"
+            case cameraAction = "camera_action"
             case focalLength = "focal_length"
             case instruction
         }
@@ -104,6 +106,13 @@ struct CompositionPlanResponse: Codable {
     struct SubjectTarget: Codable {
         var x: Double?
         var y: Double?
+    }
+
+    /// 模型给出的相机动作建议（水平/垂直/距离），距离字段用于目标高度换算
+    struct CameraAction: Codable {
+        var horizontal: String?
+        var vertical: String?
+        var distance: String?
     }
 
     var scene: SceneInfo?
@@ -147,6 +156,18 @@ enum CompositionPlanMapper {
         }
     }
 
+    /// 相机动作距离建议字符串 → 本地枚举（缺失时按构图类型兜底：close_up 隐含 closer）
+    static func distance(from raw: String?, composition: String?) -> PlanDistance {
+        switch raw?.lowercased() {
+        case "closer": return .closer
+        case "farther": return .farther
+        case "keep": return .keep
+        default:
+            // 模型没给出距离建议时，close_up 类构图隐含“靠近”
+            return composition?.lowercased() == "close_up" ? .closer : .keep
+        }
+    }
+
     /// 把远程方案数组映射为本地 CompositionPlan（过滤无效项，截取前 3 个）
     static func plans(from response: CompositionPlanResponse) -> [CompositionPlan] {
         // 主体类型 → 跟踪方式：人物用人体检测，其余（物品/建筑/食物）用显著性
@@ -171,7 +192,7 @@ enum CompositionPlanMapper {
                 detail: remote.description ?? remote.instruction ?? "",
                 composition: compositionType(from: remote.composition),
                 subjectTarget: CGPoint(x: x, y: yFromTop),
-                distance: .keep,
+                distance: distance(from: remote.cameraAction?.distance, composition: remote.composition),
                 focalHint: normalizeFocal(remote.focalLength),
                 tracking: looksLikePerson ? .person : .saliency,
                 instruction: remote.instruction,
