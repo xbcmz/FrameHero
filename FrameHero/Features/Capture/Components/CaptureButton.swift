@@ -56,9 +56,11 @@ struct CaptureButton: View {
 	@State private var achievedPulse = false
 	@State private var isBursting = false
 	@State private var burstTimer: DispatchSourceTimer?
+	/// 连拍会话结束时刻（长按松手后 0.3s 内忽略快门动作，防收尾多拍一张）
+	@State private var burstEndedAt: Date?
 
 	var body: some View {
-		Button(action: action) {
+		Button(action: performAction) {
 			ZStack {
 				// 达标脉冲外圈（绿色呼吸，钓用户按快门）
 				if isAchieved {
@@ -104,33 +106,45 @@ struct CaptureButton: View {
 		.scaleEffect(isBursting ? 0.96 : (isScaled ? 0.95 : 1.0))
 		.animation(DesignSystem.Animation.quick, value: isScaled)
 		.animation(DesignSystem.Animation.quick, value: isBursting)
-		// 长按连拍（iOS 相机肌肉记忆）：长按 0.45s 进入连拍，松手结束
+		// 长按连拍（iOS 相机肌肉记忆）：按住 0.45s 才进入连拍。
+		// 注意：连拍必须在长按成功后才开火——若在按下瞬间（onPressingChanged）
+		// 就拍第一张，快速点按会变成"按下 1 张 + 松开快门动作 1 张"的双拍
 		.onLongPressGesture(minimumDuration: 0.45, maximumDistance: 40) {
-			// 长按完成
+			startBurst()
 		} onPressingChanged: { pressing in
-			handleBurstPressing(pressing)
+			if !pressing { stopBurst() }
 		}
 	}
 
-	private func handleBurstPressing(_ pressing: Bool) {
+	/// 快门动作（带连拍收尾保护）
+	private func performAction() {
+		if let ended = burstEndedAt, Date().timeIntervalSince(ended) < 0.3 {
+			burstEndedAt = nil
+			return
+		}
+		action()
+	}
+
+	private func startBurst() {
 		guard let burst = burstAction else { return }
-		if pressing {
-			isBursting = true
+		isBursting = true
+		burst()
+		HapticManager.shared.light()
+		let timer = DispatchSource.makeTimerSource(queue: .main)
+		timer.schedule(deadline: .now() + 0.35, repeating: 0.35)
+		timer.setEventHandler {
 			burst()
 			HapticManager.shared.light()
-			let timer = DispatchSource.makeTimerSource(queue: .main)
-			timer.schedule(deadline: .now() + 0.35, repeating: 0.35)
-			timer.setEventHandler {
-				burst()
-				HapticManager.shared.light()
-			}
-			timer.resume()
-			burstTimer = timer
-		} else {
-			isBursting = false
-			burstTimer?.cancel()
-			burstTimer = nil
 		}
+		timer.resume()
+		burstTimer = timer
+	}
+
+	private func stopBurst() {
+		if burstTimer != nil { burstEndedAt = Date() }
+		isBursting = false
+		burstTimer?.cancel()
+		burstTimer = nil
 	}
 
 }
