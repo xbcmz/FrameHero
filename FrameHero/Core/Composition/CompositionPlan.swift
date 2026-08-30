@@ -90,6 +90,8 @@ struct CompositionPlan: Identifiable, Equatable {
     var focalHint: String?
     /// 实时跟踪方式
     var tracking: PlanTracking
+    /// AI 生成的初始动作指令（选中方案时作为首条 chip 文案）
+    var instruction: String? = nil
     /// 群像方案（跟踪群体包围盒而非单人）
     var isGroup: Bool = false
     /// 目标位置待 AdaCrop 裁切区校准（首次显著性定位时计算）

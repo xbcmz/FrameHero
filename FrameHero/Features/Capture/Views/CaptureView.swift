@@ -250,6 +250,9 @@ struct CaptureView: View {
 			)
 		}
 		.accessibilityLabel("AI 构图")
+		// §17：分析进行中禁用入口，杜绝并发分析请求
+		.disabled(viewModel.coachPhase == .analyzing)
+		.opacity(viewModel.coachPhase == .analyzing ? 0.55 : 1.0)
 	}
 
 	private var zoomDialRow: some View {

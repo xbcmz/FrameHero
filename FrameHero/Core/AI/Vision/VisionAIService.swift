@@ -92,8 +92,18 @@ protocol VisionAIService {
     var configuration: VisionAIConfiguration { get }
 
     /// 发送图片（JPEG Data）+ 提示词，返回模型原始文本（主线程回调）
+    /// - Parameter systemPrompt: 可选的系统角色提示（如"AI 摄影指导"）
     func sendVisionRequest(jpegData: Data, prompt: String,
+                           systemPrompt: String?,
                            completion: @escaping (Result<String, Error>) -> Void)
+}
+
+extension VisionAIService {
+    /// 无系统提示的便捷重载
+    func sendVisionRequest(jpegData: Data, prompt: String,
+                           completion: @escaping (Result<String, Error>) -> Void) {
+        sendVisionRequest(jpegData: jpegData, prompt: prompt, systemPrompt: nil, completion: completion)
+    }
 }
 
 extension VisionAIService {
@@ -126,6 +136,7 @@ final class DeepSeekVisionService: VisionAIService {
     }
 
     func sendVisionRequest(jpegData: Data, prompt: String,
+                           systemPrompt: String? = nil,
                            completion: @escaping (Result<String, Error>) -> Void) {
         var trimmed = configuration.baseURL.trimmingCharacters(in: .whitespacesAndNewlines)
         if trimmed.hasSuffix("/") { trimmed.removeLast() }
@@ -143,18 +154,24 @@ final class DeepSeekVisionService: VisionAIService {
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
 
         // OpenAI 兼容多模态消息格式：content 为 text + image_url（data URL）数组
+        var messages: [[String: Any]] = []
+        if let systemPrompt {
+            messages.append(["role": "system", "content": systemPrompt])
+        }
+        messages.append([
+            "role": "user",
+            "content": [
+                ["type": "text", "text": prompt],
+                ["type": "image_url",
+                 "image_url": ["url": "data:image/jpeg;base64," + jpegData.base64EncodedString()]]
+            ]
+        ])
+
         let body: [String: Any] = [
             "model": configuration.model,
-            "messages": [[
-                "role": "user",
-                "content": [
-                    ["type": "text", "text": prompt],
-                    ["type": "image_url",
-                     "image_url": ["url": "data:image/jpeg;base64," + jpegData.base64EncodedString()]]
-                ]
-            ]],
+            "messages": messages,
             "temperature": 0.3,
-            "max_tokens": 500,
+            "max_tokens": 800,
             "stream": false
         ]
         request.httpBody = try? JSONSerialization.data(withJSONObject: body)

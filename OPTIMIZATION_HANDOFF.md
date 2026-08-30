@@ -93,6 +93,20 @@
 - ⚠️ 待真机验证：exp 模型的模型 ID 字符串与多模态消息格式（当前按 OpenAI 兼容 text+image_url 实现；若平台要求其他字段，只需改 DeepSeekVisionService 一处）
 - **视觉模型已纳入模型选择**（真机测试通过后的跟进）：设置页「AI 助手 → 模型」拆为两条线——文本模型（通用 V3/深度思考 R1，拍后点评用）+ **视觉模型（V4 Flash Vision，图片理解用）**，各自独立持久化（ai.visionModel）；`VisionAIConfiguration.current()` 读取用户选择；后续上新的视觉模型只需往 `availableVisionModels` 加一条
 
+## 第十二批（dev 分支，2026-08-30：MVP Final Plan——DeepSeek Vision 驱动构图方案）
+
+> 依据用户《AI Camera MVP Final Development Plan》实施。核心变化：**方案生成从本地启发式升级为 DeepSeek Vision（V4-Flash-Vision-Exp）从真实画面生成**，本地启发式降级为兜底。
+
+- **新增 `CompositionPlanGeneration.swift`**：§16 系统角色提示词（AI 摄影指导）+ §6 输出契约（scene/main_subject/plans[]，含 subject_target/camera_action/focal_length/instruction）+ 宽松解析（容忍围栏）+ `CompositionPlanMapper`（composition 字符串宽松映射，subject_target 钳制 0.06-0.94，缺失回退右三分）
+- **CompositionPlan 新增 `instruction` 字段**：AI 生成的动作指令，选中方案时作为首条 chip 文案
+- **VM 云方案流**：startAIComposition → 云端配置就绪则取帧 → DeepSeek Vision（一次请求）→ 解析 → .plans；**§18 错误处理**：JSON 无效重试一次、请求失败重试一次，仍失败回退本地启发式方案并提示原因（相机永不因云端失败不可用）；原始响应 print 留痕
+- **§11 方向指令**：改为单条输出，优先级 水平 > 垂直 > 距离（此前三方向叠加文案）
+- **§17 状态机**：分析中 AI 键禁用（防并发分析请求）；CoachPhase 已天然满足 状态机
+- **§12 自动拍照默认改为手动**（AppStorage 默认 false，用户仍可在菜单开启）——倒计时/防抖机制保留
+- **§13 CoordinateConverter**：图像坐标↔视图坐标↔前置镜像换算收拢为专属工具，标记点显示已迁移
+- **§20 安全**：Key 仍在 Keychain（开发期直连）；生产上线前需后端代理（已在方案内注明）
+- 真机待验证：DeepSeek Vision 出方案延迟（≤30s 超时）、方案质量（真实画面驱动 vs 规则）、instruction 首条指令的引导手感
+
 ## 版本基线与分支约定
 
 ## 项目位置与验证命令

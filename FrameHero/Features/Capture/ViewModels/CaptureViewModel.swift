@@ -70,8 +70,13 @@ final class CaptureViewModel: ObservableObject {
 	@Published private(set) var compositionPlans: [CompositionPlan] = []
 	/// 当前选中方案的序号
 	@Published private(set) var selectedPlanIndex: Int?
-	/// 方案生成器（MVP：本地启发式；后续可换 VLM 实现）
+	/// 方案生成器（本地启发式：云方案失败时的兜底，以及 Vision 引擎档的规则方案）
 	private let planProvider: CompositionPlanProviding = LocalHeuristicPlanProvider()
+	/// DeepSeek Vision 云方案请求状态
+	private var cloudPlanInFlight = false
+	private var cloudFrameData: Data?
+	private var cloudAttempt = 0
+	/// 本会话的场景描述（来自 DeepSeek Vision，方案卡片页展示备用）
 	/// AdaCrop 参谋：方案生成时一次性预测最佳构图区（Vision 档位不启用）
 	private lazy var adaCropPlanAdvisor: AdaCropPlanAdvisor? = {
 		switch detectionMode {
@@ -307,13 +312,30 @@ final class CaptureViewModel: ObservableObject {
 		compositionTarget = nil
 		currentComposition = nil
 		photographyAnalysis = nil
-		coachSuggestion = "正在分析场景"
+		coachSuggestion = "AI 摄影师正在分析场景…"
 		lastSuggestionChange = Date()
 		pendingSuggestion = nil
 		suggestionDebounceWork?.cancel()
 		coachPhase = .analyzing
 		isCoachActive = true
 		sceneRecommendedFactor = nil
+
+		// MVP Final Plan：DeepSeek Vision 负责思考（一次请求），失败回退本地启发式
+		if AIConfigurationStore.shared.isCloudConfigured {
+			cloudPlanInFlight = true
+			cloudAttempt = 0
+			captureFrameForVision { [weak self] data in
+				guard let self else { return }
+				guard let data else {
+					self.startLocalPlanFallback()
+					return
+				}
+				self.cloudFrameData = data
+				self.requestCloudPlans(attempt: 1)
+			}
+		} else {
+			startLocalPlanFallback()
+		}
 		// 标记待分析帧：下一帧到达立即分析，不等节流窗口
 		pendingFrameForAnalysis = true
 	}
@@ -664,7 +686,8 @@ final class CaptureViewModel: ObservableObject {
 			}
 
 			let elapsed = planAnalysisStartedAt.map { Date().timeIntervalSince($0) } ?? 0
-			if !planGenerationDone, photographyAnalysis != nil, elapsed >= 0.9, !adaCropRunning {
+			if !planGenerationDone, !cloudPlanInFlight,
+			   photographyAnalysis != nil, elapsed >= 0.9, !adaCropRunning {
 				if let ada = adaCropPlanAdvisor {
 					adaCropRunning = true
 					ada.predictBestCrop(pixel, orientation: orientation) { [weak self] rect in
@@ -972,7 +995,79 @@ final class CaptureViewModel: ObservableObject {
 		publishSuggestion(chipText(guidance: guidance, plan: selectedPlan))
 	}
 
-	// MARK: - 方案生成与选择
+	// MARK: - DeepSeek Vision 云方案流（MVP Final Plan §6/§16/§18）
+
+	/// 发送帧到 DeepSeek Vision 生成构图方案；JSON 无效重试一次，
+	/// 仍失败回退本地启发式方案（相机永不因云端失败而不可用）
+	private func requestCloudPlans(attempt: Int) {
+		guard let (service, _) = VisionAIServiceFactory.make(), let frame = cloudFrameData else {
+			startLocalPlanFallback()
+			return
+		}
+
+		service.sendVisionRequest(jpegData: frame,
+								  prompt: CompositionPrompt.planRequest,
+								  systemPrompt: CompositionPrompt.systemRole) { [weak self] result in
+			guard let self else { return }
+			switch result {
+			case .success(let text):
+				guard let response = CompositionPlanResponse.parse(from: text),
+					  !(response.plans ?? []).isEmpty else {
+					// §18 无效 JSON：重试一次
+					if attempt < 2 {
+						self.requestCloudPlans(attempt: attempt + 1)
+					} else {
+						print("[Vision] invalid plan JSON, raw:", text.prefix(500))
+						self.startLocalPlanFallback(note: "云端解析失败，已用本地方案")
+					}
+					return
+				}
+				self.deliverCloudPlans(response)
+
+			case .failure(let error):
+				// §18 请求失败（网络/鉴权/限流）：重试一次后回退本地
+				if attempt < 2 {
+					self.requestCloudPlans(attempt: attempt + 1)
+				} else {
+					print("[Vision] request failed:", error.localizedDescription)
+					self.startLocalPlanFallback(note: "云端请求失败（\(error.localizedDescription)），已用本地方案")
+				}
+			}
+		}
+	}
+
+	private func deliverCloudPlans(_ response: CompositionPlanResponse) {
+		let plans = CompositionPlanMapper.plans(from: response)
+		guard !plans.isEmpty else {
+			if cloudAttempt < 2 { cloudAttempt += 1; requestCloudPlans(attempt: cloudAttempt + 1); return }
+			startLocalPlanFallback(note: "云端方案为空，已用本地方案")
+			return
+		}
+		cloudPlanInFlight = false
+		compositionPlans = plans
+		coachSceneLabel = response.scene?.type
+		coachGuidance = nil
+		coachPhase = .plans
+		HapticManager.shared.soft()
+	}
+
+	/// 本地启发式兜底：走原有的证据积累 → 规则方案流程
+	private func startLocalPlanFallback(note: String? = nil) {
+		cloudPlanInFlight = false
+		cloudFrameData = nil
+		if let note {
+			coachSuggestion = note
+			lastSuggestionChange = Date()
+			pendingSuggestion = nil
+			suggestionDebounceWork?.cancel()
+		}
+		planAnalysisStartedAt = Date()
+		pendingFrameForAnalysis = true
+		if coachPhase == .analyzing { return }
+		coachPhase = .analyzing
+	}
+
+	// MARK: - 方案生成与选择（本地启发式）
 
 	/// 分析证据就绪 → 生成构图方案
 	private func generatePlans() {
@@ -1025,7 +1120,7 @@ final class CaptureViewModel: ObservableObject {
 		}
 
 		coachSceneLabel = plan.title
-		coachSuggestion = plan.detail
+		coachSuggestion = plan.instruction ?? plan.detail
 		lastSuggestionChange = Date()
 		pendingSuggestion = nil
 		suggestionDebounceWork?.cancel()
@@ -1098,20 +1193,24 @@ final class CaptureViewModel: ObservableObject {
 		return abs(person.centerX - left) <= abs(person.centerX - right) ? left : right
 	}
 
-	/// 供 UI 显示的目标标记点（视图坐标；前置预览是镜像的，X 需翻转）
+	/// 供 UI 显示的目标标记点（换算统一走 CoordinateConverter）
 	var displayTargetMarkerPoint: CGPoint? {
-		if let point = coachGuidance?.targetPointInView {
+		if let imagePoint = coachGuidance?.targetPointInView {
+			let viewPoint = CoordinateConverter.viewPoint(fromImagePoint: imagePoint,
+														  rect: compositionRectInView)
 			return isFrontCamera
-				? CGPoint(x: compositionRectInView.width - point.x, y: point.y)
-				: point
+				? CGPoint(x: CoordinateConverter.mirroredX(viewPoint.x, rectWidth: compositionRectInView.width),
+						  y: viewPoint.y)
+				: viewPoint
 		}
 		// 静态方案（无跟踪）：方案目标点直接上屏
 		if let plan = selectedPlan, plan.tracking == .none, compositionRectInView.width > 0 {
-			let x = plan.subjectTarget.x * compositionRectInView.width
-			let y = plan.subjectTarget.y * compositionRectInView.height
+			let viewPoint = CoordinateConverter.viewPoint(fromPlanTarget: plan.subjectTarget,
+														  rect: compositionRectInView)
 			return isFrontCamera
-				? CGPoint(x: compositionRectInView.width - x, y: y)
-				: CGPoint(x: x, y: y)
+				? CGPoint(x: CoordinateConverter.mirroredX(viewPoint.x, rectWidth: compositionRectInView.width),
+						  y: viewPoint.y)
+				: viewPoint
 		}
 		return nil
 	}
@@ -1134,26 +1233,24 @@ final class CaptureViewModel: ObservableObject {
 		return currentScene?.defaultInstruction ?? SceneClassifier.SceneKind.generic.defaultInstruction
 	}
 
-	/// 方向 → 复合口语化指令（距离/水平/垂直可叠加）
+	/// 方向指令（§11：一次只给一条，优先级 水平 > 垂直 > 距离）
 	private func directionText(for guidance: GuidanceResult) -> String {
-		var parts: [String] = []
-		switch guidance.distanceDirection {
-		case .moveCloser: parts.append("再靠近一点")
-		case .moveFarther: parts.append("退远一点")
-		default: break
-		}
 		switch guidance.horizontalDirection {
-		case .moveLeft: parts.append(isFrontCamera ? "向右移一点" : "向左移一点")
-		case .moveRight: parts.append(isFrontCamera ? "向左移一点" : "向右移一点")
+		case .moveLeft: return isFrontCamera ? "向右移一点 →" : "向左移一点 ←"
+		case .moveRight: return isFrontCamera ? "向左移一点 ←" : "向右移一点 →"
 		default: break
 		}
 		switch guidance.verticalDirection {
-		case .moveUp: parts.append("举高一点")
-		case .moveDown: parts.append("放低一点")
+		case .moveUp: return "举高一点 ↑"
+		case .moveDown: return "放低一点 ↓"
 		default: break
 		}
-		if parts.isEmpty { return "保持稳定，微调构图" }
-		return parts.joined(separator: "，")
+		switch guidance.distanceDirection {
+		case .moveCloser: return "再靠近一点"
+		case .moveFarther: return "退远一点"
+		default: break
+		}
+		return "保持稳定，微调构图"
 	}
 
 	/// 从构图分析结果构建引导引擎输入

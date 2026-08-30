@@ -14,7 +14,7 @@ final class AppRouter: ObservableObject {
 
 struct MainTabView: View {
     @AppStorage("detectionMode") private var detectionMode: DetectionMode = .fast
-    @AppStorage("autoCaptureEnabled") private var autoCaptureEnabled = true
+    @AppStorage("autoCaptureEnabled") private var autoCaptureEnabled = false  // §12：MVP 默认手动拍摄，自动拍照作为可选开关
     @AppStorage("captureDelay") private var captureDelay: Double = 1.0
     @AppStorage("colorScheme") private var colorScheme: String = "system"
     @AppStorage("aiAdviceEnabled") private var aiAdviceEnabled: Bool = false
