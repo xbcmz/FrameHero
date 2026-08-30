@@ -342,10 +342,10 @@ final class MotionStabilityMonitor: ObservableObject {
             overallStable = consecutiveStableFrames >= requiredStableFrames
         }
         
-        // 创建详细的调试信息，包含连续帧信息
-        let debugText = "加速度: \(String(format: "%.3f", accStd))/\(String(format: "%.2f", accelerationStdThreshold)), 陀螺仪: \(String(format: "%.3f", gyroStd))/\(String(format: "%.2f", gyroStdThreshold)), 连续稳定: \(consecutiveStableFrames)"
-
+        // 调试信息只在 DEBUG 下构建：String(format:) + 字符串拼接有开销，
+        // Release 下两处用途都在 #if DEBUG 里，之前无条件构建是 20Hz 高频路径上的纯开销
         #if DEBUG
+        let debugText = "加速度: \(String(format: "%.3f", accStd))/\(String(format: "%.2f", accelerationStdThreshold)), 陀螺仪: \(String(format: "%.3f", gyroStd))/\(String(format: "%.2f", gyroStdThreshold)), 连续稳定: \(consecutiveStableFrames)"
         print("稳定性检测 - \(debugText), 整体稳定: \(overallStable)")
         #endif
 

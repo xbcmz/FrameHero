@@ -107,6 +107,24 @@ FrameHero 是一款 iOS AI 构图相机，围绕一个核心问题打造：
 
 > 云端 LLM（DeepSeek）**不参与实时引导**——逐帧请求延迟高、成本高、用户没空读。它留给「拍后点评」（路线图中），届时通过 `CompositionPlanProviding` / `AIAdviceProvider` 协议接入，换任何视觉大模型只需替换实现。
 
+## 关键技术实现
+
+### 构图方案生成
+- **本地启发式**（`CompositionPlan.LocalHeuristicPlanProvider`）：基于场景类型 + 人物/人脸几何的纯规则方案，零延迟，始终可用。
+- **云端方案**（`CompositionPlanGeneration.swift`）：每轮 AI 构图会话中 DeepSeek Vision 返回一次结构化 JSON（`scene` / `main_subject` / `plans[]`，每个方案带 `subject_target`、`camera_action.{horizontal,vertical,distance}`、`focal_length`），由 `CompositionPlanMapper` 映射为本地 `CompositionPlan` 模型。解析/映射都是无状态的纯函数（`static func`），与 `CaptureViewModel` 的重试/回退编排逻辑解耦，无需 mock 网络层即可单独单元测试。
+- **AdaCrop 校准**：`AdaCropPlanAdvisor` 每会话跑一次 Fast/Pro CoreML 模型预测“最佳构图裁切区”，`PlanGeometry.mapThroughCrop` 把方案的主体目标位置重新映射进该裁切区，在纯规则位置之上进一步精细化“主体到底放哪”。
+
+### 姿态水平仪
+`MotionStabilityMonitor.attitude.roll`（CoreMotion 设备姿态）驱动 `CaptureView`/`CaptureViewModel` 中的实时水平参考线与候斜文案（`cameraRollDegrees`，节流到 ~6.7fps 以避免 SwiftUI 过度重渲染）。
+
+### 距离估算
+`CaptureViewModel.distanceEstimateText` 用 `person.heightRatio × zoomState.currentFactor`（主体屏幕高度占比 × 当前变焦倍率）分档为“~5 米开外/3-5 米/2 米/1 米/0.5 米内”粗略提示——不需要额外模型，直接复用跟踪管线已有的人体框。结合 AI 方案的 `camera_action.distance`（`closer`/`keep`/`farther`），共同驱动“靠近一点/退远一点”的引导文案。
+
+### 并发模型
+每个后台 worker 只拥有一条专属串行队列，内部需要分支判断的状态都维护一份**队列专属镜像**；`@Published` 属性只能作为面向主线程的单向输出，绝不能在后台队列上回读（主线程异步写入会与后台读取竞争）。这条全项目约定是在修复两个真实数据竞争后正式确立的：
+- `MotionStabilityMonitor`：迟滞判断必须分支内部镜像 `stableState`（仅在 `dataQueue` 上读写），而不是 `@Published isStable`（仅在主线程读写）；`largeMotionFlag` 的延迟复位也从 `DispatchQueue.main.asyncAfter` 改回 `dataQueue`，同理。
+- `SceneClassifier`：`classify()` 跑在相机帧回调的 `videoOutputQueue` 上，`reset()` 由主线程 UI 操作触发，两者现在都经过专用的 `stateQueue` 串行化对 `votes`/`currentDecision` 的访问。
+
 ## 目录结构
 
 ```text
@@ -138,8 +156,8 @@ FrameHero/
 │   │   ├── CompositionGuidanceEngine.swift # 目标差值 → 方向/进度/达标
 │   │   └── ...(结果/目标/引导模型)
 │   ├── Detection/
-│   │   ├── CropDetectionStrategy.swift     # 检测模式定义
-│   │   └── AestheticCropDetector.swift     # Vision 人脸/人体/显著性
+│   │   ├── CropDetectionStrategy.swift     # 检测模式枚举（Vision/Fast/Pro）
+│   │   └── AestheticCropDetector.swift     # Vision 人脸/人体原始检测（供 CompositionEngine 使用）
 │   ├── Models/                             # AdaCrop CoreML 模型（student/teacher）
 │   ├── Motion/MotionStabilityMonitor.swift # 陀螺仪稳定性
 │   └── Storage/                            # 照片存储（评分随片入库）
@@ -233,7 +251,7 @@ A: App 沙盒内的 Application Support 目录，不进系统相册。在照片�
 
 ## 贡献
 
-欢迎 Issue 与 PR。提交代码请保持：SwiftUI + MVVM、相机操作在 `sessionQueue`、敏感信息不入代码、每个文件顶部注明用途。
+欢迎 Issue 与 PR。提交代码请保持：SwiftUI + MVVM、相机操作在 `sessionQueue`、每个文件顶部注明用途、敏感信息不入代码；新增后台 worker 时绝不在它自己的队列上回读 `@Published` 属性，改用队列专属镜像（见上文「并发模型」）。
 
 ## 许可证
 

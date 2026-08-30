@@ -120,13 +120,24 @@ struct CompositionPlanResponse: Codable {
     var plans: [RemotePlan]?
 
     /// 稳健解析：容忍 ```json 围栏与前后杂文本（取首个 { 到最后一个 }）
+    ///
+    /// 外部契约仍返回 Optional（调用方回退本地方案的逻辑不变），
+    /// 但内部不再用 try? 静默吞掉解码错误——这会导致云端 schema 漂移（字段改名/型别不匹配）
+    /// 完全隐形，只能归因为“方案为空”重试/回退，无法定位真正原因。
     static func parse(from text: String) -> CompositionPlanResponse? {
         guard let start = text.firstIndex(of: "{"),
               let end = text.lastIndex(of: "}"),
               start < end else { return nil }
         let json = String(text[start...end])
         guard let data = json.data(using: .utf8) else { return nil }
-        return try? JSONDecoder().decode(CompositionPlanResponse.self, from: data)
+        do {
+            return try JSONDecoder().decode(CompositionPlanResponse.self, from: data)
+        } catch {
+            #if DEBUG
+            print("[CompositionPlanResponse] decode failed:", error)
+            #endif
+            return nil
+        }
     }
 }
 

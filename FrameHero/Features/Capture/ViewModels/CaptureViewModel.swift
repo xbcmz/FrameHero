@@ -1239,23 +1239,6 @@ final class CaptureViewModel: ObservableObject {
 		}
 	}
 
-	/// 锁定目标点的 X 选择规则（构图标准）：
-	/// 1. 前视空间优先——脸朝右 → 人放左三分点，给视线留白；脸朝左反之
-	/// 2. 无明确朝向 → 取最近三分点（减少用户移动量）
-	/// 3. 主体居中（左右等距）→ 固定取右三分点（确定性，避免等距翻转）
-	private func lockedTargetX(for person: PersonInfo) -> CGFloat {
-		let left = 1.0 / 3.0
-		let right = 2.0 / 3.0
-
-		if let faceX = person.faceCenterX {
-			let facing = faceX - person.centerX
-			if facing > 0.015 { return left }
-			if facing < -0.015 { return right }
-		}
-		if abs(person.centerX - 0.5) < 0.05 { return right }
-		return abs(person.centerX - left) <= abs(person.centerX - right) ? left : right
-	}
-
 	// MARK: - 场景化覆盖层（P1: scene-specific overlays）
 
 	/// 引导元素样式：按所选方案的构图类型/场景切换
