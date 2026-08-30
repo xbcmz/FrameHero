@@ -1,9 +1,13 @@
 import Foundation
 import Combine
 import UIKit
+import PhotosUI
 
 final class HomeViewModel: ObservableObject {
     @Published private(set) var records: [PhotoRecord] = []
+    /// 从系统相册导入中（批量导入时需要一个进度 UI）
+    @Published private(set) var isImporting = false
+    @Published private(set) var importProgress: (done: Int, total: Int)?
     private var cancellables: Set<AnyCancellable> = []
 
     init() {
@@ -57,5 +61,37 @@ final class HomeViewModel: ObservableObject {
         guard let url = PhotoStorageService.shared.photoURL(for: id),
               let data = try? Data(contentsOf: url) else { return nil }
         return UIImage(data: data)
+    }
+
+    // MARK: - 从系统相册导入
+
+    /// 批量导入：逐张读取 PhotosPickerItem → 写入图库 → 后台跑一次本地 AI 点评打分
+    /// （零网络，不需要等待也不会阻塞导入流程，完成后通过 recordsPublisher 自然刷新图库角标）
+    @MainActor
+    func importPhotos(from items: [PhotosPickerItem]) async {
+        guard !items.isEmpty else { return }
+        isImporting = true
+        importProgress = (0, items.count)
+        defer {
+            isImporting = false
+            importProgress = nil
+        }
+
+        for (index, item) in items.enumerated() {
+            if let data = try? await item.loadTransferable(type: Data.self),
+               let uiImage = UIImage(data: data),
+               let jpegData = uiImage.jpegData(compressionQuality: 0.92) {
+                let id = await withCheckedContinuation { (continuation: CheckedContinuation<UUID, Never>) in
+                    PhotoStorageService.shared.savePhoto(data: jpegData, detectionMethod: "相册导入") { id in
+                        continuation.resume(returning: id)
+                    }
+                }
+                DispatchQueue.global(qos: .utility).async {
+                    guard let critique = LocalPhotoCritiqueEngine.analyze(uiImage) else { return }
+                    PhotoStorageService.shared.updateCritique(critique, for: id)
+                }
+            }
+            importProgress = (index + 1, items.count)
+        }
     }
 }

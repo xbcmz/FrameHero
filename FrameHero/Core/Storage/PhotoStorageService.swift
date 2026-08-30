@@ -55,7 +55,8 @@ final class PhotoStorageService {
         }
     }
 
-    func savePhoto(data: Data, detectionMethod: String? = nil, compositionScore: Int? = nil) {
+    func savePhoto(data: Data, detectionMethod: String? = nil, compositionScore: Int? = nil,
+                    completion: ((UUID) -> Void)? = nil) {
         let id = UUID()
         let photoURL = photosDir.appendingPathComponent(PhotoRecord.photoFilename(for: id))
         let thumbURL = thumbnailsDir.appendingPathComponent(PhotoRecord.thumbnailFilename(for: id))
@@ -96,6 +97,23 @@ final class PhotoStorageService {
                                      imageWidth: exif.width, imageHeight: exif.height,
                                      compositionScore: compositionScore)
             self.records.insert(record, at: 0)
+            self.persist()
+            if let completion {
+                DispatchQueue.main.async { completion(id) }
+            }
+        }
+    }
+
+    /// 写入图库「AI 点评」结果缓存。若该记录还没拍摄时评分（例如从相册导入的照片），
+    /// 用点评的综合分回填，让图库角标/首页统计也能用上。
+    func updateCritique(_ critique: PhotoCritique, for id: UUID) {
+        storageQueue.async { [weak self] in
+            guard let self else { return }
+            guard let index = self.records.firstIndex(where: { $0.id == id }) else { return }
+            self.records[index].critique = critique
+            if self.records[index].compositionScore == nil {
+                self.records[index].compositionScore = critique.score
+            }
             self.persist()
         }
     }

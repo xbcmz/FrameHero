@@ -1,4 +1,5 @@
 import SwiftUI
+import PhotosUI
 
 struct GalleryView: View {
     @StateObject private var viewModel = HomeViewModel()
@@ -6,6 +7,8 @@ struct GalleryView: View {
     @State private var isSelectionMode = false
     @State private var selectedIDs: Set<UUID> = []
     @State private var showDeleteConfirm = false
+    /// 从系统相册导入的选择结果（PhotosPicker 不需要完整相册权限，选什么给什么）
+    @State private var pickerItems: [PhotosPickerItem] = []
 
     var body: some View {
         NavigationStack {
@@ -60,6 +63,8 @@ struct GalleryView: View {
                                 .font(DesignSystem.Typography.subheadline.weight(.semibold))
                                 .foregroundColor(DesignSystem.Colors.primary)
                             }
+
+                            importPickerButton
                         }
                     }
                     .padding(.horizontal, 20)
@@ -68,6 +73,12 @@ struct GalleryView: View {
 
                     if !isSelectionMode && !viewModel.records.isEmpty {
                         guidanceBanner
+                            .padding(.horizontal, 20)
+                            .padding(.bottom, 12)
+                    }
+
+                    if viewModel.isImporting, let progress = viewModel.importProgress {
+                        importProgressBanner(progress)
                             .padding(.horizontal, 20)
                             .padding(.bottom, 12)
                     }
@@ -82,6 +93,12 @@ struct GalleryView: View {
             }
             .background(Color(uiColor: .systemBackground))
             .navigationBarHidden(true)
+            .onChange(of: pickerItems) { _, items in
+                guard !items.isEmpty else { return }
+                let itemsToImport = items
+                pickerItems = []
+                Task { await viewModel.importPhotos(from: itemsToImport) }
+            }
             .navigationDestination(item: $selectedPhotoIndex) { index in
                 PhotoBrowserView(
                     records: viewModel.records,
@@ -196,6 +213,38 @@ struct GalleryView: View {
         }
     }
 
+    // MARK: - 从相册导入
+
+    /// 导入入口按钮（PhotosPicker 自身就是可点击的触发视图，不需要额外的 sheet 状态）
+    private var importPickerButton: some View {
+        PhotosPicker(selection: $pickerItems, maxSelectionCount: 30, matching: .images) {
+            HStack(spacing: 4) {
+                Image(systemName: "square.and.arrow.down")
+                    .font(.system(size: 12, weight: .semibold))
+                Text("导入")
+            }
+            .font(DesignSystem.Typography.subheadline.weight(.semibold))
+            .foregroundColor(DesignSystem.Colors.primary)
+        }
+        .disabled(viewModel.isImporting)
+    }
+
+    private func importProgressBanner(_ progress: (done: Int, total: Int)) -> some View {
+        HStack(spacing: 10) {
+            ProgressView()
+            Text("正在导入并 AI 打分 \(progress.done)/\(progress.total) 张照片…")
+                .font(DesignSystem.Typography.caption1)
+                .foregroundColor(DesignSystem.Colors.textSecondary)
+            Spacer()
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .background(
+            RoundedRectangle(cornerRadius: 10)
+                .fill(DesignSystem.Colors.backgroundSecondary)
+        )
+    }
+
     // MARK: - Empty State
 
     private var emptyStateView: some View {
@@ -207,9 +256,12 @@ struct GalleryView: View {
             Text("暂无照片")
                 .font(DesignSystem.Typography.title3)
                 .foregroundColor(DesignSystem.Colors.textSecondary)
-            Text("使用下方拍摄按钮开始创作")
+            Text("使用下方拍摄按钮开始创作，或从相册导入照片让 AI 打分")
                 .font(DesignSystem.Typography.subheadline)
                 .foregroundColor(DesignSystem.Colors.textTertiary)
+
+            importPickerButton
+                .padding(.top, 4)
         }
     }
 }

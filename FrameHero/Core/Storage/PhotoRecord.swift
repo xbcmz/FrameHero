@@ -19,6 +19,10 @@ struct PhotoRecord: Identifiable, Codable, Equatable {
     /// 旧记录没有该字段——可选属性经合成解码 decodeIfPresent，老 records.json 直接兼容。
     var compositionScore: Int?
 
+    /// 图库「AI 点评」结果缓存（本地/云端），避免每次打开面板都重新请求一次。
+    /// 旧记录同样没有该字段，decodeIfPresent 兼容。
+    var critique: PhotoCritique?
+
     init(id: UUID = UUID(),
          creationDate: Date = Date(),
          localIdentifier: String? = nil,
@@ -28,7 +32,8 @@ struct PhotoRecord: Identifiable, Codable, Equatable {
          aperture: Double? = nil,
          imageWidth: Int? = nil,
          imageHeight: Int? = nil,
-         compositionScore: Int? = nil) {
+         compositionScore: Int? = nil,
+         critique: PhotoCritique? = nil) {
         self.id = id
         self.creationDate = creationDate
         self.localIdentifier = localIdentifier
@@ -39,6 +44,7 @@ struct PhotoRecord: Identifiable, Codable, Equatable {
         self.imageWidth = imageWidth
         self.imageHeight = imageHeight
         self.compositionScore = compositionScore
+        self.critique = critique
     }
 }
 
