@@ -80,9 +80,13 @@ final class SceneClassifier {
 
     // MARK: - 状态
 
-    /// votes / currentDecision 专属串行队列：
-    /// classify() 跑在相机帧回调的 videoOutputQueue 上，reset() 由主线程 UI 操作触发，
-    /// 两者必须通过同一条队列互斥，否则对 votes/currentDecision 的并发读写是数据竞争。
+    /// classify() 的 Vision 推理 + votes/currentDecision 读写统一在这条专属串行队列上执行：
+    /// 1) 避免在相机帧回调的 videoOutputQueue 上同步阻塞——VNClassifyImageRequest 首次
+    ///    调用有模型冷启动开销（常见 200ms~1s+），同步跑会连带拖慢同一队列上排队的
+    ///    其它相机帧处理，是“AI 构图分析卡顿”的实际成因之一（与 AestheticCropDetector /
+    ///    AdaCropPlanAdvisor 早已采用的“自己的后台队列 + async”模式保持一致）。
+    /// 2) reset()（主线程 UI 触发）与 classify()（videoOutputQueue 触发）对 votes/currentDecision
+    ///    的读写通过同一条队列互斥，避免数据竞争。
     private let stateQueue = DispatchQueue(label: "framehero.sceneclassifier.state")
 
     /// 滑动投票窗口：(场景, 时间戳)，仅在 stateQueue 上读写
@@ -97,29 +101,34 @@ final class SceneClassifier {
     func classify(_ pixelBuffer: CVPixelBuffer,
                   orientation: CGImagePropertyOrientation,
                   completion: @escaping (Decision?) -> Void) {
-        let request = VNClassifyImageRequest { [weak self] vnRequest, error in
-            guard let self else { return }
-            guard error == nil,
-                  let observations = vnRequest.results as? [VNClassificationObservation] else {
+        // Vision 推理本身也换到 stateQueue 上 async 执行，不在调用方的线程（videoOutputQueue）上同步阻塞
+        stateQueue.async { [weak self] in
+            guard let self else {
                 DispatchQueue.main.async { completion(nil) }
                 return
             }
-            let decision = self.stateQueue.sync { self.accumulate(observations: observations) }
+            let request = VNClassifyImageRequest()
+            let handler = VNImageRequestHandler(cvPixelBuffer: pixelBuffer, orientation: orientation, options: [:])
+            do {
+                try handler.perform([request])
+            } catch {
+                DispatchQueue.main.async { completion(nil) }
+                return
+            }
+            guard let observations = request.results as? [VNClassificationObservation] else {
+                DispatchQueue.main.async { completion(nil) }
+                return
+            }
+            let decision = self.accumulate(observations: observations)
             DispatchQueue.main.async { completion(decision) }
-        }
-        let handler = VNImageRequestHandler(cvPixelBuffer: pixelBuffer, orientation: orientation, options: [:])
-        do {
-            try handler.perform([request])
-        } catch {
-            DispatchQueue.main.async { completion(nil) }
         }
     }
 
-    /// 会话重置（重新开始一轮识别），可能从主线程调用，必须与 classify() 互斥
+    /// 会话重置（重新开始一轮识别），与 classify() 同队列串行，无需等待
     func reset() {
-        stateQueue.sync {
-            votes.removeAll()
-            currentDecision = nil
+        stateQueue.async { [weak self] in
+            self?.votes.removeAll()
+            self?.currentDecision = nil
         }
     }
 
