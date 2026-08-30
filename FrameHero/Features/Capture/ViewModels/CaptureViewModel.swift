@@ -185,6 +185,11 @@ final class CaptureViewModel: ObservableObject {
 	private var countdownTimer: DispatchSourceTimer?
 	private var countdownDeadline: Date?
 
+	// MARK: - 姿态水平仪（P1：CoreMotion 姿态精细化引导）
+	/// 设备侧倾角（度，正=向右倾）；nil = 尚无数据
+	@Published private(set) var cameraRollDegrees: Double?
+	private var lastRollUpdate = Date.distantPast
+
 	// MARK: - chip 防抖（B5）
 	/// 上次 chip 文案变更时间
 	private var lastSuggestionChange = Date.distantPast
@@ -522,6 +527,18 @@ final class CaptureViewModel: ObservableObject {
 	// MARK: - Bindings
 
 	private func bindMotion() {
+		motion.$deviceMotion
+			.receive(on: DispatchQueue.main)
+			.sink { [weak self] motion in
+				guard let self, let motion else { return }
+				let now = Date()
+				guard now.timeIntervalSince(self.lastRollUpdate) >= 0.15 else { return }
+				self.lastRollUpdate = now
+				// 竖屏握持时 roll 即画面侧倾角（弧度→度）
+				self.cameraRollDegrees = motion.attitude.roll * 180 / .pi
+			}
+			.store(in: &cancellables)
+
 		motion.$isStable
 			.receive(on: DispatchQueue.main)
 			.sink { [weak self] stable in
@@ -1197,6 +1214,41 @@ final class CaptureViewModel: ObservableObject {
 		return abs(person.centerX - left) <= abs(person.centerX - right) ? left : right
 	}
 
+	// MARK: - 场景化覆盖层（P1: scene-specific overlays）
+
+	/// 引导元素样式：按所选方案的构图类型/场景切换
+	enum GuideStyle {
+		case thirds        // 三分网格（通用/三分法/留白/环境人像）
+		case centerCross   // 中心十字（居中对称/特写/美食）
+		case documentFrame // 中央取景框（文档）
+	}
+
+	var coachGuideStyle: GuideStyle {
+		if currentScene == .document, selectedPlan?.tracking == .none {
+			return .documentFrame
+		}
+		switch selectedPlan?.composition {
+		case .centerSymmetry: return .centerCross
+		default: return .thirds
+		}
+	}
+
+	/// 距离估算（人物方案）：主体画面占比 × 变焦 → 粗略米数区间
+	var distanceEstimateText: String? {
+		guard coachPhase == .guiding || coachPhase == .achieved,
+		      selectedPlan?.tracking == .person,
+		      let person = photographyAnalysis?.composition.person,
+		      person.detected else { return nil }
+		let effective = person.heightRatio * zoomState.currentFactor
+		switch effective {
+		case ..<0.12: return "距主体约 5 米开外"
+		case ..<0.25: return "距主体约 3-5 米"
+		case ..<0.45: return "距主体约 2 米"
+		case ..<0.75: return "距主体约 1 米"
+		default: return "距主体约 0.5 米内"
+		}
+	}
+
 	/// 供 UI 显示的目标标记点（换算统一走 CoordinateConverter）
 	var displayTargetMarkerPoint: CGPoint? {
 		if let imagePoint = coachGuidance?.targetPointInView {
@@ -1219,8 +1271,14 @@ final class CaptureViewModel: ObservableObject {
 		return nil
 	}
 
-	/// 一行建议指令（chip 文案）：有引导按方向说，无引导按方案/场景说
+	/// 一行建议指令（chip 文案）：水平倾斜最优先（先摆平再构图），
+	/// 其次引导方向，无引导按方案/场景说
 	private func chipText(guidance: GuidanceResult?, plan: CompositionPlan?) -> String {
+		// 水平仪提示：倾斜超过 2.5° 时优先纠正（符号如真机相反可翻转）
+		if let roll = cameraRollDegrees, abs(roll) > 2.5,
+		   coachPhase == .guiding || coachPhase == .achieved {
+			return roll < 0 ? "画面向左倾斜，先摆平" : "画面向右倾斜，先摆平"
+		}
 		if let guidance {
 			switch guidance.state {
 			case .optimal:

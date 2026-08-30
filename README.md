@@ -229,7 +229,7 @@ A: Inside the app sandbox (Application Support), not the system library. Export 
 - [x] **Phase 10** — group awareness / subject continuity / AdaCrop engine tiers
 - [x] **Post-shot review** — DeepSeek Vision structured critique (score / strengths / improvements)
 - [x] **VLM plan provider** — scene-aware plans from DeepSeek Vision
-- [ ] **ARKit pose** — finer guidance (level / pitch)
+- [x] **Pose level** — CoreMotion roll → horizon line + tilt coaching (ARKit optional later)
 - [x] **Auto focal switch** — plan focal suggestions execute on selection
 
 ## Contributing

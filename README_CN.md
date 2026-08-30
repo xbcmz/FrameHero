@@ -228,7 +228,7 @@ A: App 沙盒内的 Application Support 目录，不进系统相册。在照片�
 - [x] **Phase 10** — 群像感知 / 主体连续性 / AdaCrop 引擎档位
 - [x] **拍后点评** — DeepSeek Vision 单张照片结构化点评（得分/亮点/改进建议）
 - [x] **VLM 方案提供方** — DeepSeek Vision 驱动构图方案
-- [ ] **ARKit 姿态** — 手机姿态精细化引导（水平仪/俯仰角）
+- [x] **姿态水平仪** — CoreMotion 侧倾角 → 水平参考线 + 倾斜纠正引导（ARKit 后续可选）
 - [x] **自动焦段切换** — 选中方案时自动执行焦段建议
 
 ## 贡献

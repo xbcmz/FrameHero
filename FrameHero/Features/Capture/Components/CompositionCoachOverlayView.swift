@@ -39,6 +39,14 @@ struct CompositionCoachOverlayView: View {
     let onSelectPlan: (Int) -> Void
     let onCancelPlans: () -> Void
 
+    // MARK: - 姿态/场景化（P1）
+    /// 设备侧倾角（度），nil = 无数据
+    let rollDegrees: Double?
+    /// 引导元素样式（三分网格/中心十字/文档取景框）
+    let guideStyle: CaptureViewModel.GuideStyle?
+    /// 距离估算文案（人物方案），nil = 不显示
+    let distanceLabel: String?
+
     @State private var pulse = false
     @State private var scanProgress: CGFloat = 0
 
@@ -52,9 +60,19 @@ struct CompositionCoachOverlayView: View {
             }
 
             if phase == .guiding || phase == .achieved {
-                thirdsGrid
+                // 场景化引导元素（P1: scene-specific overlays）
+                guideElements
                     .opacity(phase == .achieved ? 0.35 : 1.0)
                     .animation(.spring(response: 0.5, dampingFraction: 0.85), value: phase)
+
+                // 水平参考线：随设备侧倾旋转，倾斜过大时转黄提醒
+                if let roll = rollDegrees {
+                    Rectangle()
+                        .fill(abs(roll) > 2.5 ? Color.yellow.opacity(0.6) : Color.white.opacity(0.18))
+                        .frame(height: 1.5)
+                        .rotationEffect(.degrees(roll))
+                        .animation(.easeInOut(duration: 0.15), value: roll)
+                }
             }
 
             // 目标标记圈：AI 选定的构图位置，把主体放进去即变绿（最终指示）
@@ -75,6 +93,14 @@ struct CompositionCoachOverlayView: View {
 
                     if phase == .guiding || phase == .achieved, hasChipContent {
                         suggestionChip
+                    }
+
+                    // 距离估算（人物方案）
+                    if let distanceLabel, phase == .guiding || phase == .achieved {
+                        Text(distanceLabel)
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundColor(.white.opacity(0.7))
+                            .shadow(color: .black.opacity(0.4), radius: 2)
                     }
                 }
 
@@ -100,8 +126,21 @@ struct CompositionCoachOverlayView: View {
         !suggestion.isEmpty || (sceneLabel != nil && !sceneLabel!.isEmpty)
     }
 
-    // MARK: - 三分构图线
+    // MARK: - 场景化引导元素
 
+    @ViewBuilder
+    private var guideElements: some View {
+        switch guideStyle ?? .thirds {
+        case .thirds:
+            thirdsGrid
+        case .centerCross:
+            centerCross
+        case .documentFrame:
+            documentFrame
+        }
+    }
+
+    /// 三分网格
     private var thirdsGrid: some View {
         Canvas { context, size in
             let alpha: Double = phase == .achieved ? 0.10 : 0.28
@@ -115,6 +154,46 @@ struct CompositionCoachOverlayView: View {
                 path.addLine(to: CGPoint(x: size.width, y: y))
             }
             context.stroke(path, with: .color(.white.opacity(alpha)), lineWidth: 1)
+        }
+        .allowsHitTesting(false)
+    }
+
+    /// 中心十字 + 参考圆（居中对称/特写/美食）
+    private var centerCross: some View {
+        GeometryReader { geo in
+            ZStack {
+                Path { p in
+                    p.move(to: CGPoint(x: 0, y: geo.size.height / 2))
+                    p.addLine(to: CGPoint(x: geo.size.width, y: geo.size.height / 2))
+                    p.move(to: CGPoint(x: geo.size.width / 2, y: 0))
+                    p.addLine(to: CGPoint(x: geo.size.width / 2, y: geo.size.height))
+                }
+                .stroke(Color.white.opacity(phase == .achieved ? 0.08 : 0.2),
+                        style: StrokeStyle(lineWidth: 1, dash: [6, 5]))
+
+                Circle()
+                    .stroke(Color.white.opacity(phase == .achieved ? 0.15 : 0.4),
+                            style: StrokeStyle(lineWidth: 1.5, dash: [4, 4]))
+                    .frame(width: geo.size.width * 0.42,
+                           height: geo.size.width * 0.42)
+                    .position(x: geo.size.width / 2, y: geo.size.height / 2)
+            }
+        }
+        .allowsHitTesting(false)
+    }
+
+    /// 文档取景框（正对文档场景）
+    private var documentFrame: some View {
+        GeometryReader { geo in
+            let frameRect = CGRect(x: geo.size.width * 0.07,
+                                   y: geo.size.height * 0.06,
+                                   width: geo.size.width * 0.86,
+                                   height: geo.size.height * 0.88)
+            RoundedRectangle(cornerRadius: 12)
+                .stroke(Color.white.opacity(phase == .achieved ? 0.15 : 0.55),
+                        style: StrokeStyle(lineWidth: 1.5, dash: [7, 5]))
+                .frame(width: frameRect.width, height: frameRect.height)
+                .position(x: frameRect.midX, y: frameRect.midY)
         }
         .allowsHitTesting(false)
     }

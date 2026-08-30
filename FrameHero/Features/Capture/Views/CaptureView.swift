@@ -70,6 +70,9 @@ struct CaptureView: View {
 					coachGuidance: viewModel.displayGuidance,
 					coachMarkerPoint: viewModel.displayTargetMarkerPoint,
 					coachAligned: viewModel.coachGuidance?.isAligned ?? false,
+					coachRollDegrees: viewModel.cameraRollDegrees,
+					coachGuideStyle: viewModel.coachGuideStyle,
+					coachDistanceLabel: viewModel.distanceEstimateText,
 					coachPlans: viewModel.compositionPlans,
 					coachSelectedPlanIndex: viewModel.selectedPlanIndex,
 					onSelectPlan: { index in

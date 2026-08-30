@@ -40,6 +40,9 @@ struct CameraPreviewSection: View {
 	let coachGuidance: GuidanceResult?
 	let coachMarkerPoint: CGPoint?
 	let coachAligned: Bool
+	let coachRollDegrees: Double?
+	let coachGuideStyle: CaptureViewModel.GuideStyle?
+	let coachDistanceLabel: String?
 	// 构图方案（.plans 阶段）
 	let coachPlans: [CompositionPlan]
 	let coachSelectedPlanIndex: Int?
@@ -76,7 +79,10 @@ struct CameraPreviewSection: View {
 					plans: coachPlans,
 					selectedPlanIndex: coachSelectedPlanIndex,
 					onSelectPlan: onSelectPlan,
-					onCancelPlans: onCancelPlans
+					onCancelPlans: onCancelPlans,
+					rollDegrees: coachRollDegrees,
+					guideStyle: coachGuideStyle,
+					distanceLabel: coachDistanceLabel
 				)
 				.frame(width: composition.width, height: composition.height)
 				.position(x: composition.midX, y: composition.midY)
