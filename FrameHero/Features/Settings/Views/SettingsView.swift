@@ -298,8 +298,13 @@ struct SettingsView: View {
 
     /// 本地/云端对比测试开关：控制「AI 构图」点击后走本地、云端还是两者并行
     private var analysisModeRow: some View {
+        analysisModeRowContent
+            .padding(.vertical, 14)
+    }
+
+    private var analysisModeRowContent: some View {
         modelSubRow(
-            icon: "bolt.badge.clock",
+            icon: "arrow.triangle.branch",
             title: "构图分析模式",
             description: aiConfig.compositionAnalysisMode.description
         ) {
