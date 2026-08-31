@@ -8,8 +8,9 @@
 //  1. 有缓存（record.critique）→ 直接展示，不重新分析
 //  2. 没缓存 → 先跑本地 Vision 引擎（LocalPhotoCritiqueEngine，零网络、
 //     近乎瞬时），立刻展示结果并写入缓存
-//  3. 若云端已配置，后台并行请求 DeepSeek Vision；到达后无感升级为
-//     更懂语义的点评并覆盖缓存；失败则静默保留本地结果，不打扰用户
+//  3. 若云端已配置，后台并行请求 DeepSeek Vision；请求会附带本地引擎预先提取的
+//     “构图原语”（对称/平衡/引导线方向/前景），让云端不必单凭像素猜测；
+//     到达后无感升级为更懂语义的点评并覆盖缓存；失败则静默保留本地结果，不打扰用户
 //  4. 顶部「重新分析」可强制重跑（本地 + 云端都会再来一轮）
 //
 
@@ -364,10 +365,14 @@ struct PhotoCritiqueSheet: View {
                 DispatchQueue.main.async { isUpgrading = false }
                 return
             }
+            // 本地先算好对称/平衡/引导线等“构图原语”，随 prompt 一并交给云端，
+            // 让 LLM 不必单凭像素重新猜测几何关系
+            let primitives = LocalPhotoCritiqueEngine.compositionPrimitivesSummary(image)
             service.sendVisionRequest(
                 jpegData: payload,
-                prompt: PhotoCritique.prompt(context: context),
-                systemPrompt: "你是一位严格的手机摄影评委，点评必须基于照片本身，语言简洁具体。"
+                prompt: PhotoCritique.prompt(context: context, primitives: primitives),
+                systemPrompt: "你是一位专业摄影构图顾问，擅长用「空间深度」「视觉平衡」「叙事感」解读画面，"
+                    + "点评必须基于照片本身，语言简洁但要点出具体构图手法。"
             ) { result in
                 isUpgrading = false
                 guard case .success(let text) = result,
