@@ -14,6 +14,13 @@
 //  不接受自由文本作为主逻辑；解析失败自动重试一次，
 //  仍失败则上层回退本地启发式方案（§18 错误处理）。
 //
+//  ## Prompt 设计（专业构图理论框架）
+//  systemRole 要求模型从“空间深度/视觉平衡/叙事感”三个视角先推理再选构图模式，
+//  避免机械地默认 rule_of_thirds/centered；planRequest 的 composition 枚举值补全了
+//  leading_lines/framing/foreground_layering 三个本地引擎早已支持但云端 schema 一直
+//  没用过的值（CompositionPlanMapper.compositionType 早就能识别，只是模型从未被告知
+//  还有这三个选项）。
+//
 
 import Foundation
 
@@ -23,13 +30,27 @@ enum CompositionPrompt {
 
     /// 系统角色：AI 摄影指导
     static let systemRole = """
-    You are an AI photography director specializing in mobile photography composition.
+    You are an AI photography director specializing in mobile photography composition, \
+    grounded in classical composition theory (rule of thirds, centered symmetry, leading lines, \
+    framing, foreground layering, negative space, diagonal/curved lines).
 
     Your task is to analyze the provided camera image and recommend the best way to photograph the current scene.
 
-    Analyze: main subject, scene type, background, visual balance, available space, lighting, and composition opportunities.
+    For every plan, reason from three perspectives before choosing a composition pattern:
+    - Spatial depth: are there foreground/midground/background layers, or an element that could add depth \
+    (a foreground frame, a leading line, layered subjects)?
+    - Visual balance: how is visual weight distributed (subject size/position, empty space, light/dark areas), \
+    and does the recommended camera action improve that balance?
+    - Narrative: does the composition direct the viewer's eye toward the subject and tell a clear visual story, \
+    rather than just centering a person?
 
-    Generate up to 3 composition plans. Each plan must be visually achievable by moving the smartphone camera.
+    Analyze: main subject, scene type, background, visual balance, available space, lighting, and composition opportunities.
+    Pick the composition pattern (see the `composition` enum below) that best fits what you actually see — \
+    do not default to rule_of_thirds/centered for everything; use framing/leading_lines/foreground_layering \
+    whenever the image actually has a doorway/archway/frame, a line/path/railing, or a foreground object to exploit.
+
+    Generate up to 3 composition plans, each expressing a distinct pattern/perspective rather than minor variations \
+    of the same idea. Each plan must be visually achievable by moving the smartphone camera.
 
     Rules:
     1. Do not provide long photography explanations.
@@ -52,8 +73,8 @@ enum CompositionPrompt {
           "id": "plan_1",
           "title": "简短方案名（中文）",
           "style": "风格词（中文，如 电影感）",
-          "description": "一句话说明（中文）",
-          "composition": "rule_of_thirds | centered | symmetry | negative_space | environmental_portrait | close_up",
+          "description": "一句话说明，可以提到这样构图在空间深度/视觉平衡/叙事上的好处（中文）",
+          "composition": "rule_of_thirds | centered | symmetry | negative_space | environmental_portrait | close_up | leading_lines | framing | foreground_layering",
           "subject_target": { "x": 0.0, "y": 0.0 },
           "camera_action": { "horizontal": "left|right|none", "vertical": "up|down|none", "distance": "closer|keep|farther" },
           "focal_length": "1x | 2x | 0.5x | keep",
@@ -61,6 +82,16 @@ enum CompositionPrompt {
         }
       ]
     }
+
+    composition 取值说明（根据实际画面选择，不要固定用前两个）：
+    - rule_of_thirds：主体放在三分线交点附近
+    - centered / symmetry：居中或左右/上下对称
+    - negative_space：主体靠边，大面积留白
+    - leading_lines：画面中有路/栏杆/栅栏/建筑线条可以引导视线到主体
+    - framing：画面中有门/窗/拱廊等可当“框”把主体框进去
+    - foreground_layering：可利用前景物体与主体拉开层次/深度
+    - environmental_portrait：人物与环境同框，强调空间关系
+    - close_up：靠近拍特写，主体占据画面主导位置
 
     Rules:
     - subject_target uses normalized coordinates, (0,0) = top-left, (1,1) = bottom-right.
